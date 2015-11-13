@@ -665,14 +665,23 @@ void Nnet::Check() const {
     const NetworkNode &node = nodes_[n];
     std::string node_name = node_names_[n];
     KALDI_ASSERT(GetNodeIndex(node_name) == n);
+    int32 node_index_reserved = GetNodeIndex(node_name + 
+		                             "_STATE_PREVIOUS_MINIBATCH");
+    KALDI_ASSERT(node_index_reserved == -1 ||
+		 (IsInputNode(node_index_reserved) && IsOutputNode(n) &&
+		 node_name != "output"));
     switch (node.node_type) {
       case kInput:
         KALDI_ASSERT(node.dim > 0);
         num_input_nodes++;
         break;
       case kDescriptor: {
-        if (IsOutputNode(n))
+        if (IsOutputNode(n)) {
           num_output_nodes++;
+	  if (node_name != "output")
+	    KALDI_ASSERT(node_index_reserved != -1 &&
+			 IsInputNode(node_index_reserved));
+	}
         std::vector<int32> node_deps;
         node.descriptor.GetNodeDependencies(&node_deps);
         SortAndUniq(&node_deps);

@@ -28,7 +28,8 @@ NnetTrainer::NnetTrainer(const NnetTrainerOptions &config,
     config_(config),
     nnet_(nnet),
     compiler_(*nnet, config_.optimize_config),
-    num_minibatches_processed_(0) {
+    num_minibatches_processed_(0),
+    state_preserving_training_(false) {
   if (config.zero_component_stats)
     ZeroComponentStats(nnet);
   if (config.momentum == 0.0 && config.max_param_change == 0.0) {
@@ -41,26 +42,87 @@ NnetTrainer::NnetTrainer(const NnetTrainerOptions &config,
                                // natural-gradient updates.
     SetZero(is_gradient, delta_nnet_);
   }
+  if (config.minibatch_chunk_size > 0)
+    state_preserving_training_ = true;
 }
 
 
 void NnetTrainer::Train(const NnetExample &eg) {
-  bool need_model_derivative = true;
-  ComputationRequest request;
-  GetComputationRequest(*nnet_, eg, need_model_derivative,
-                        config_.store_component_stats,
-                        &request);
-  const NnetComputation *computation = compiler_.Compile(request);
+  if (!state_preserving_training) {
+    bool need_model_derivative = true;
+    ComputationRequest request;
+    GetComputationRequest(*nnet_, eg, need_model_derivative,
+                          config_.store_component_stats,
+                          &request);
+    const NnetComputation *computation = compiler_.Compile(request);
 
-  NnetComputer computer(config_.compute_config, *computation,
-                        *nnet_,
-                        (delta_nnet_ == NULL ? nnet_ : delta_nnet_));
-  // give the inputs to the computer object.
-  computer.AcceptInputs(*nnet_, eg.io);
-  computer.Forward();
+    NnetComputer computer(config_.compute_config, *computation,
+                          *nnet_,
+                          (delta_nnet_ == NULL ? nnet_ : delta_nnet_));
+    // give the inputs to the computer object.
+    computer.AcceptInputs(*nnet_, eg.io);
+    computer.Forward();
 
-  this->ProcessOutputs(eg, &computer);
-  computer.Backward();
+    this->ProcessOutputs(eg, &computer);
+    computer.Backward();
+  } else {
+    int32 num_chunks = -1, left_context = -1, right_context = -1;
+    ComputeSimpleNnetContext(nnet_, &left_context, &right_context); //TODO: avoid call it for every minibatch
+    std::vector<NnetExample> splitted;
+    eg.SplitChunk(config_.minibatch_chunk_size, left_context, right_context,
+		  &num_chunks, &splitted);
+
+    std::vector<NnetExample>::iterator iter = splitted.begin(),
+	                               end = splitted.end();
+    for (; iter != end; ++iter) {
+      // find all the recurrent connections from the previous minibatch
+      std::vector<std::pair<std::string, Matrix<BaseFloat> > > r;
+      GetRecurrentOutputs(config_.minibatch_chunk_size,
+		          num_chunks, iter == splitted.begin(), &computer, &r);
+      for (int32 i = 0; i < static_cast<int32>(r.size()); i++) {
+	// add to NnetIo the recurrent connections from the previous minibatch
+	// as additional inputs
+	iter->io.push_back(NnetIo(r[i].first + "_STATE_PREVIOUS_MINIBATCH", 0,
+			   r[i].second));
+	// correct the indexes: swap indexes "n" and "t" so that 
+	// n ranges from 0 to feats.NumRows() - 1 and t is always 0
+	std::vector<Index> &indexes = iter->io.back().indexes;
+	for (int32 i = 0; i < static_cast<int32>(indexes.size()); i++)
+	  std::swap(indexes[i].n, indexes[i].t);
+
+	// add to NnetIo the recurrent connections in the current minibatch 
+	// as additional outputs. the output matrix is simply all-zero since
+	// we only need its size info for NnetIo::indexes
+	iter->io.push_back(NnetIo(r[i].first, 0,
+		           Matrix(num_chunks * config_.minibatch_chunk_size,
+		           r[i].second.NumCols())));
+        // correct the indexes.
+	std::vector<Index> &indexes = iter->io.back().indexes;
+	for (int32 n = 0, i = 0; n < num_chunks; n++)
+	  for (int32 t = 0; t < config_.minibatch_chunk_size; t++, i++) {
+	      indexes[i].n = n;
+	      indexes[i].t = t;
+	  }
+      }
+     
+      bool need_model_derivative = true; 
+      ComputationRequest request;
+      GetComputationRequest(*nnet_, *iter, need_model_derivative,
+                          config_.store_component_stats,
+                          &request);
+      const NnetComputation *computation = compiler_.Compile(request);
+
+      NnetComputer computer(config_.compute_config, *computation,
+                            *nnet_,
+                            (delta_nnet_ == NULL ? nnet_ : delta_nnet_));
+      // give the inputs to the computer object.
+      computer.AcceptInputs(*nnet_, (*iter).io);
+      computer.Forward();
+     
+      this->ProcessOutputs(*iter, &computer);
+      computer.Backward();
+    }
+  }
 
   if (delta_nnet_ != NULL) {
     BaseFloat scale = (1.0 - config_.momentum);
@@ -103,6 +165,54 @@ void NnetTrainer::ProcessOutputs(const NnetExample &eg,
                                       num_minibatches_processed_++,
                                       tot_weight, tot_objf);
     }
+  }
+}
+
+void NnetTrainer::GetRecurrentOutputs(int32 chunk_size,
+		                      int32 num_chunks,
+				      bool is_first_minibatch,
+		                      NnetComputer &computer,
+		                      std::vector<std::pair<std::string,
+				      MatrixBase<BaseFloat> > > *r) {
+  // Get node names of all recurrent connections from output nodes.
+  // We assume all output nodes except the one named "output" are 
+  // recurrent connections.
+  // TODO: avoid get the node names every minibatch
+  std::vector<std::string> recurrent_outputs;
+  for (int32 i = 0; i < static_cast<int32>(nnet_->NumNodes()); i++)
+    if (nnet_->IsOutputNode(i) && nnet_->GetNodeName(i) != "output")
+      recurrent_outputs.push_back(nnet_->GetNodeName(i));
+
+  r->clear();
+  r->resize(recurrent_outputs.size());
+
+  for (int32 i = 0; i < static_cast<int32>(recurrent_outputs.size()); i++) {
+    if (!is_first_minibatch) {
+      // get the cuda matrix correspoding to the recurrent output
+      const CuMatrixBase<BaseFloat> &r_cuda_all 
+	      = computer.GetOutput(recurrent_outputs[i]);
+      KALDI_ASSERT(r_cuda_all.NumRows() == num_chunks * chunk_size); //TODO: need to confirm if it is still the case when chunk_left_context > 0
+
+      // only copy the rows corresponding to the recurrent output of the
+      // last frame of each chunk in the previous minibatch
+      std::vector<int32> indexes(num_chunks);
+      for (int32 i = 0; i < num_chunks; i++)
+        indexes[i] = i * chunk_size + chunk_size - 1;
+      CuArray<int32> indexes_cuda(indexes);
+
+      CuMatrix<BaseFloat> r_cuda(num_chunks, r_cuda_all.NumCols());
+      r_cuda->CopyRows(r_cuda_all, indexes_cuda);
+
+      // copy to (node_name : matrix) pair
+      r->push_back(std::make_pair(recurrent_outputs[i],
+			          Matrix(num_chunks, r_cuda_all.NumCols())));
+      r->back().second.CopyFromMatrix(r_cuda);
+    }
+  } else { 
+      // add all-zero matrices as addional inputs for the first minibatch
+      r->push_back(std::make_pair(recurrent_outputs[i],
+				  Matrix(num_chunks,
+				  nnet_.OutputDim(recurrent_outputs[i]))));
   }
 }
 
@@ -233,6 +343,11 @@ void ComputeObjectiveFunction(const GeneralMatrix &supervision,
       *tot_objf = -0.5 * TraceMatMat(diff, diff, kTrans);
       if (supply_deriv)
         computer->AcceptOutputDeriv(output_name, &diff);
+      break;
+    }
+    case kNone: {
+      *tot_weight = 0;
+      *tot_objf = 0;
       break;
     }
     default:

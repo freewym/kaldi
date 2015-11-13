@@ -36,6 +36,7 @@ struct NnetTrainerOptions {
   bool debug_computation;
   BaseFloat momentum;
   BaseFloat max_param_change;
+  int minibatch_chunk_size;
   NnetOptimizeOptions optimize_config;
   NnetComputeOptions compute_config;
   NnetTrainerOptions():
@@ -44,7 +45,8 @@ struct NnetTrainerOptions {
       print_interval(100),
       debug_computation(false),
       momentum(0.0),
-      max_param_change(2.0) { }
+      max_param_change(2.0) 
+      minibatch_chunk_size(0) { }
   void Register(OptionsItf *opts) {
     opts->Register("store-component-stats", &store_component_stats,
                    "If true, store activations and derivatives for nonlinear "
@@ -64,6 +66,9 @@ struct NnetTrainerOptions {
                    "so that the 'effective' learning rate is the same as "
                    "before (because momentum would normally increase the "
                    "effective learning rate by 1/(1-momentum))");
+    opts->Register("minibatch-chunk-size", &minibatch_chunk_size,
+		   "used for enabling state preserving LSTM. default 0 indicates "
+		   "no state preserving");
 
     // register the optimization options with the prefix "optimization".
     ParseOptions optimization_opts("optimization", opts);
@@ -138,6 +143,16 @@ class NnetTrainer {
  private:
   void ProcessOutputs(const NnetExample &eg,
                       NnetComputer *computer);
+ 
+  // Find (names, output matrix) pairs of all the recurrent connections from
+  // the previous minibatch. The output matrix only includes the recurrent
+  // output of the last frame of each chunk in the previous minibatch. 
+  void GetRecurrentOutputs(int32 chunk_size,
+		           int32 num_chunks,
+			   bool is_first_minibatch,
+		           NnetComputer &computer,
+		           std::vector<std::pair<std::string,
+			   MatrixBase<BaseFloat> > > *r);
 
   const NnetTrainerOptions config_;
   Nnet *nnet_;
@@ -153,6 +168,10 @@ class NnetTrainer {
   int32 num_minibatches_processed_;
 
   unordered_map<std::string, ObjectiveFunctionInfo, StringHasher> objf_info_;
+
+  // flag of state preserving training mode. 
+  // default: false. It will be set true if minibatch_chunk_size > 0
+  bool state_preserving_training_;
 };
 
 /**
