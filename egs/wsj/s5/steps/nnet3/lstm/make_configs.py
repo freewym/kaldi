@@ -83,6 +83,8 @@ if __name__ == "__main__":
                         help="dimension of non-recurrent projection")
     parser.add_argument("--hidden-dim", type=int,
                         help="dimension of fully-connected layers")
+    parser.add_argument("--state-preserving", type=str,
+		        help="state preserving training mode", default="false", choices = ["false", "true"])
 
     # Natural gradient options
     parser.add_argument("--ng-per-element-scale-options", type=str,
@@ -170,14 +172,21 @@ if __name__ == "__main__":
     prev_layer_output = nodes.AddLdaLayer(config_lines, "L0", prev_layer_output, args.config_dir + '/lda.mat')
 
     for i in range(args.num_lstm_layers):
+	# add recurrent input-nodes
+	if (args.state_preserving == "true"):
+	    nodes.AddRecurrentInputNodes(config_lines, "Lstm{0}".format(i+1), args.cell_dim, args.recurrent_projection_dim)
         prev_layer_output = nodes.AddLstmLayer(config_lines, "Lstm{0}".format(i+1), prev_layer_output, args.cell_dim,
                                          args.recurrent_projection_dim, args.non_recurrent_projection_dim,
+                                         args.state_preserving,
                                          args.clipping_threshold, args.norm_based_clipping,
                                          args.ng_per_element_scale_options, args.ng_affine_options,
                                          lstm_delay = lstm_delay[i])
         # make the intermediate config file for layerwise discriminative
         # training
         nodes.AddFinalLayer(config_lines, prev_layer_output, args.num_targets, args.ng_affine_options, args.label_delay)
+	# add recurrent output-nodes for state preserving training mode
+	if (args.state_preserving == "true"):
+	    nodes.AddRecurrentOutputNodes(config_lines, "Lstm{0}".format(i+1), args.recurrent_projection_dim)
         config_files['{0}/layer{1}.config'.format(args.config_dir, i+1)] = config_lines
         config_lines = {'components':[], 'component-nodes':[]}
 
