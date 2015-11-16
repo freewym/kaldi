@@ -72,7 +72,8 @@ lstm_delay=" -1 -2 -3 "  # the delay to be used in the recurrence of lstms
                          # delays -1, -2 and -3 at layer1 lstm, layer2 lstm and layer3 lstm respectively
 num_bptt_steps=    # this variable counts the number of time steps to back-propagate from the last label in the chunk
                    # it is usually same as chunk_width
-
+minibatch_chunk_size=0   # if > 0, then state preserving traning mode will be enabled,
+                         # and chunk_width should be an exact multiple of it
 
 # nnet3-train options
 shrink=0.99  # this parameter would be used to scale the parameter matrices
@@ -185,6 +186,9 @@ if [ $# != 4 ]; then
   echo "  --shrink <shrink|0.99>                           # if non-zero this parameter will be used to scale the parameter matrices"
   echo "  --shrink-threshold <threshold|0.15>             # a threshold (should be between 0.0 and 0.25) that controls when to"
   echo "                                                   # do parameter shrinking."
+  echo "  --minibatch_chunk_size <int|0>                   # if > 0 then each chunk of size chunk_width will be splitted into smaller ones of size"
+  echo "                                                   # minibatch_chunk_size, and the state preserving training mode will be enabled, which preserves"
+  echo "                                                   # states between minibatches. Note that if it is > 0, chunk_width should be an exact multiple of it."
   echo " for more options see the script"
   exit 1;
 fi
@@ -249,6 +253,11 @@ if [ $stage -le -5 ]; then
   config_extra_opts=()
   [ ! -z "$lstm_delay" ] && config_extra_opts+=(--lstm-delay "$lstm_delay")
 
+  if [$minibatch_chunk_size -gt 0]; then
+    state_preserving=true
+  else
+    state_preserving=false
+  fi
   steps/nnet3/lstm/make_configs.py  "${config_extra_opts[@]}" \
     --splice-indexes "$splice_indexes " \
     --num-lstm-layers $num_lstm_layers \
@@ -262,6 +271,7 @@ if [ $stage -le -5 ]; then
     --clipping-threshold $clipping_threshold \
     --num-targets $num_leaves \
     --label-delay $label_delay \
+    --state-preserving $state_preserving \
    $dir/configs || exit 1;
   # Initialize as "raw" nnet, prior to training the LDA-like preconditioning
   # matrix.  This first config just does any initial splicing that we do;
@@ -591,6 +601,7 @@ while [ $x -lt $num_iters ]; do
           nnet3-train $parallel_train_opts --print-interval=10 --momentum=$momentum \
           --max-param-change=$max_param_change \
           --optimization.min-deriv-time=$min_deriv_time "$raw" \
+	  --minibatch-chunk-size $minibatch_chunk_size \
           "ark:nnet3-copy-egs $context_opts ark:$cur_egs_dir/egs.$archive.ark ark:- | nnet3-shuffle-egs --buffer-size=$shuffle_buffer_size --srand=$x ark:- ark:-| nnet3-merge-egs --minibatch-size=$this_num_chunk_per_minibatch --measure-output-frames=false --discard-partial-minibatches=true ark:- ark:- |" \
           $dir/$[$x+1].$n.raw || touch $dir/.error &
       done
