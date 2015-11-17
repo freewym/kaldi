@@ -96,6 +96,15 @@ static void ComputeSimpleNnetContextForShift(
   IoSpecification ivector;  // we might or might not use this.
   ivector.name = "ivector";
 
+  // find all recurrent outputs as additional inputs
+  std::vector<IoSpecification> r;
+  for (int32 i = 0; i < nnet.NumNodes(); i++) {
+    std::string node_name = nnet.GetNodeName(i);
+    if (nnet.IsInputNode(i) && node_name != "input" && node_name != "ivector")
+      r.push_back(IoSpecification(node_name, 0, 1));
+  }
+  KALDI_LOG << "r.size()=" << r.size(); //debug only
+
   int32 n = rand() % 10;
   // in the IoSpecification for now we we will request all the same indexes at
   // output that we requested at input.
@@ -106,12 +115,20 @@ static void ComputeSimpleNnetContextForShift(
   // the assumption here is that the network just requires the ivector at time
   // t=0.
   ivector.indexes.push_back(Index(n, 0));
+  // modify indexes "n" for all addtional inputs
+  for (int32 i = 0; i < static_cast<int32>(r.size()); i++)
+    r[i].indexes.back().n = n;
 
   ComputationRequest request;
   request.inputs.push_back(input);
   request.outputs.push_back(output);
   if (nnet.GetNodeIndex("ivector") != -1)
     request.inputs.push_back(ivector);
+  // add additinal outputs to request
+  for (int32 i = 0; i < static_cast<int32>(r.size()); i++)
+    if (nnet.GetNodeIndex(r[i].name) != -1)
+      request.inputs.push_back(r[i]);
+
   std::vector<std::vector<bool> > computable;
   EvaluateComputationRequest(nnet, request, &computable);
 
@@ -122,6 +139,7 @@ static void ComputeSimpleNnetContextForShift(
   int32 first_ok = iter - output_ok.begin();
   int32 first_not_ok = std::find(iter, output_ok.end(), false) -
       output_ok.begin();
+  KALDI_LOG << "first_ok=" << first_ok << " first_not_ok=" << first_not_ok << " window_size=" << window_size; //debug only
   if (first_ok == window_size || first_not_ok <= first_ok)
     KALDI_ERR << "No outputs were computable (perhaps not a simple nnet?)";
   *left_context = first_ok;
@@ -131,7 +149,7 @@ static void ComputeSimpleNnetContextForShift(
 void ComputeSimpleNnetContext(const Nnet &nnet,
                               int32 *left_context,
                               int32 *right_context) {
-  KALDI_ASSERT(IsSimpleNnet(nnet));
+  //KALDI_ASSERT(IsSimpleNnet(nnet));
   int32 modulus = nnet.Modulus();
   // modulus >= 1 is a number such that the network ought to be
   // invariant to time shifts (of both the input and output) that

@@ -253,8 +253,9 @@ if [ $stage -le -5 ]; then
   config_extra_opts=()
   [ ! -z "$lstm_delay" ] && config_extra_opts+=(--lstm-delay "$lstm_delay")
 
-  if [$minibatch_chunk_size -gt 0]; then
+  if [ $minibatch_chunk_size -gt 0 ]; then
     state_preserving=true
+    [ $[$chunk_width%$minibatch_chunk_size] -ne 0 ] && echo "$0: Error chunk_width is not a multiple of minibatch_chunk_size." && exit 1;
   else
     state_preserving=false
   fi
@@ -600,8 +601,8 @@ while [ $x -lt $num_iters ]; do
         $cmd $train_queue_opt $dir/log/train.$x.$n.log \
           nnet3-train $parallel_train_opts --print-interval=10 --momentum=$momentum \
           --max-param-change=$max_param_change \
-          --optimization.min-deriv-time=$min_deriv_time "$raw" \
-	  --minibatch-chunk-size $minibatch_chunk_size \
+          --optimization.min-deriv-time=$min_deriv_time \
+	  --minibatch-chunk-size=$minibatch_chunk_size "$raw" \
           "ark:nnet3-copy-egs $context_opts ark:$cur_egs_dir/egs.$archive.ark ark:- | nnet3-shuffle-egs --buffer-size=$shuffle_buffer_size --srand=$x ark:- ark:-| nnet3-merge-egs --minibatch-size=$this_num_chunk_per_minibatch --measure-output-frames=false --discard-partial-minibatches=true ark:- ark:- |" \
           $dir/$[$x+1].$n.raw || touch $dir/.error &
       done

@@ -14,7 +14,7 @@ def PrintConfig(file_name, config_lines):
     f = open(file_name, 'w')
     f.write("\n".join(config_lines['components'])+"\n")
     f.write("\n#Component nodes\n")
-    f.write("\n".join(config_lines['component-nodes']))
+    f.write("\n".join(config_lines['component-nodes'])+"\n")
     f.close()
 
 def ParseSpliceString(splice_indexes, label_delay=None):

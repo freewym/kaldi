@@ -68,10 +68,12 @@ void NnetTrainer::Train(const NnetExample &eg) {
   } else {
     int32 num_chunks = -1, left_context = -1, right_context = -1;
     ComputeSimpleNnetContext(*nnet_, &left_context, &right_context); //TODO: avoid call it for every minibatch
+    KALDI_LOG << "left_context=" << left_context << " right_context=" << right_context; // debug only
     std::vector<NnetExample> splitted;
     eg.SplitChunk(config_.minibatch_chunk_size, left_context, right_context,
 		  &num_chunks, &splitted);
 
+    KALDI_LOG << "splitted size=" << splitted.size(); // debug only
     std::vector<std::string> recurrent_output_names;
     GetRecurrentOutputNames(&recurrent_output_names); //TODO: avoid calling it every minibatch
 
@@ -79,6 +81,7 @@ void NnetTrainer::Train(const NnetExample &eg) {
 
     std::vector<NnetExample>::iterator iter = splitted.begin();
     for (; iter != splitted.end(); ++iter) {
+      KALDI_LOG << "num_frames=" << iter->io[0].NumFramesPerChunk() << " " << iter->io[1].NumFramesPerChunk() << " " <<iter->io[2].NumFramesPerChunk(); // debug only
       // add zero matrices in r as additional inputs for the first minibatch
       if (iter == splitted.begin()) {
         r.reserve(recurrent_output_names.size());
@@ -191,6 +194,8 @@ void NnetTrainer::GetRecurrentOutputNames(std::vector<std::string>
   for (int32 i = 0; i < static_cast<int32>(nnet_->NumNodes()); i++)
     if (nnet_->IsOutputNode(i) && nnet_->GetNodeName(i) != "output")
       recurrent_output_names->push_back(nnet_->GetNodeName(i));
+  for (int32 i = 0; i < static_cast<int32>(recurrent_output_names->size()); i++) //debug only
+    KALDI_LOG << "recurrent_output_name=" << (*recurrent_output_names)[i]; //debug only
 }
 
 void NnetTrainer::GetRecurrentOutputs(int32 chunk_size,

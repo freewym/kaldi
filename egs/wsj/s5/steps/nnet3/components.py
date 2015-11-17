@@ -175,13 +175,13 @@ def AddLstmLayer(config_lines,
     if (state_preserving == "false"):
         c_tminus1_descriptor = "IfDefined(Offset({0}_c_t, {1}))".format(name, lstm_delay)
     else: # TODO: if lstm_delay>1, does c_t_STATE_PREVIOUS_MINIBATCH still represent the output from the last frame?
-        c_tminus1_descriptor = "Failover(Offset({0}_c_t, {1}), output_{0}_c_t_STATE_PREVIOUS_MINIBATCH)".format(name, lstm_delay)
+        c_tminus1_descriptor = "Failover(Offset({0}_c_t, {1}), ReplaceIndex(output_{0}_c_t_STATE_PREVIOUS_MINIBATCH, t, 0))".format(name, lstm_delay)
 
     component_nodes.append("# i_t")
     if (state_preserving == "false"):
         component_nodes.append("component-node name={0}_i1 component={0}_W_i-xr input=Append({1}, IfDefined(Offset({0}_{2}, {3})))".format(name, input_descriptor, recurrent_connection, lstm_delay))
     else:
-	component_nodes.append("component-node name={0}_i1 component={0}_W_i-xr input=Append({1}, Failover(Offset({0}_{2}, {3}), output_{0}_{2}_STATE_PREVIOUS_MINIBATCH))".format(name, input_descriptor, recurrent_connection, lstm_delay))
+	component_nodes.append("component-node name={0}_i1 component={0}_W_i-xr input=Append({1}, Failover(Offset({0}_{2}, {3}), ReplaceIndex(output_{0}_{2}_STATE_PREVIOUS_MINIBATCH, t, 0)))".format(name, input_descriptor, recurrent_connection, lstm_delay))
     component_nodes.append("component-node name={0}_i2 component={0}_w_ic  input={1}".format(name, c_tminus1_descriptor))
     component_nodes.append("component-node name={0}_i_t component={0}_i input=Sum({0}_i1, {0}_i2)".format(name))
 
@@ -189,7 +189,7 @@ def AddLstmLayer(config_lines,
     if (state_preserving == "false"):
         component_nodes.append("component-node name={0}_f1 component={0}_W_f-xr input=Append({1}, IfDefined(Offset({0}_{2}, {3})))".format(name, input_descriptor, recurrent_connection, lstm_delay))
     else:
-	component_nodes.append("component-node name={0}_f1 component={0}_W_f-xr input=Append({1}, Failover(Offset({0}_{2}, {3}), output_{0}_{2}_STATE_PREVIOUS_MINIBATCH))".format(name, input_descriptor, recurrent_connection, lstm_delay))
+	component_nodes.append("component-node name={0}_f1 component={0}_W_f-xr input=Append({1}, Failover(Offset({0}_{2}, {3}), ReplaceIndex(output_{0}_{2}_STATE_PREVIOUS_MINIBATCH, t, 0)))".format(name, input_descriptor, recurrent_connection, lstm_delay))
     component_nodes.append("component-node name={0}_f2 component={0}_w_fc  input={1}".format(name, c_tminus1_descriptor))
     component_nodes.append("component-node name={0}_f_t component={0}_f input=Sum({0}_f1,{0}_f2)".format(name))
 
@@ -197,7 +197,7 @@ def AddLstmLayer(config_lines,
     if (state_preserving == "false"):
         component_nodes.append("component-node name={0}_o1 component={0}_W_o-xr input=Append({1}, IfDefined(Offset({0}_{2}, {3})))".format(name, input_descriptor, recurrent_connection, lstm_delay))
     else:
-	component_nodes.append("component-node name={0}_o1 component={0}_W_o-xr input=Append({1}, Failover(Offset({0}_{2}, {3}), output_{0}_{2}_STATE_PREVIOUS_MINIBATCH))".format(name, input_descriptor, recurrent_connection, lstm_delay))
+	component_nodes.append("component-node name={0}_o1 component={0}_W_o-xr input=Append({1}, Failover(Offset({0}_{2}, {3}), ReplaceIndex(output_{0}_{2}_STATE_PREVIOUS_MINIBATCH, t, 0)))".format(name, input_descriptor, recurrent_connection, lstm_delay))
     component_nodes.append("component-node name={0}_o2 component={0}_w_oc input={0}_c_t".format(name))
     component_nodes.append("component-node name={0}_o_t component={0}_o input=Sum({0}_o1, {0}_o2)".format(name))
 
@@ -208,7 +208,7 @@ def AddLstmLayer(config_lines,
     if (state_preserving == "false"):
         component_nodes.append("component-node name={0}_g1 component={0}_W_c-xr input=Append({1}, IfDefined(Offset({0}_{2}, {3})))".format(name, input_descriptor, recurrent_connection, lstm_delay))
     else:
-	component_nodes.append("component-node name={0}_g1 component={0}_W_c-xr input=Append({1}, Failover(Offset({0}_{2}, {3}), output_{0}_{2}_STATE_PREVIOUS_MINIBATCH))".format(name, input_descriptor, recurrent_connection, lstm_delay))
+	component_nodes.append("component-node name={0}_g1 component={0}_W_c-xr input=Append({1}, Failover(Offset({0}_{2}, {3}), ReplaceIndex(output_{0}_{2}_STATE_PREVIOUS_MINIBATCH, t, 0)))".format(name, input_descriptor, recurrent_connection, lstm_delay))
     component_nodes.append("component-node name={0}_g_t component={0}_g input={0}_g1".format(name))
 
     component_nodes.append("# parts of c_t")
