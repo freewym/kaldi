@@ -49,9 +49,9 @@ namespace nnet3 {
 ///    - Objective type kQuadratic is used to mean the objective function
 ///      f(x, y) = -0.5 (x-y).(x-y), which is to be maximized, as in the kLinear
 ///      case.
-///    - Objectivetype kNone is used when we need to output some hidden state that
+///    - Objectivetype kObjectiveNone is used when we need to output some hidden state that
 //.      will not be invloved in computing the objective.
-enum ObjectiveType { kLinear, kQuadratic, kNone };
+enum ObjectiveType { kLinear, kQuadratic, kObjectiveNone };
 
 
 enum NodeType { kInput, kDescriptor, kComponent, kDimRange, kNone };

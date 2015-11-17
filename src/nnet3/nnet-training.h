@@ -36,7 +36,7 @@ struct NnetTrainerOptions {
   bool debug_computation;
   BaseFloat momentum;
   BaseFloat max_param_change;
-  int minibatch_chunk_size;
+  int32 minibatch_chunk_size;
   NnetOptimizeOptions optimize_config;
   NnetComputeOptions compute_config;
   NnetTrainerOptions():
@@ -45,7 +45,7 @@ struct NnetTrainerOptions {
       print_interval(100),
       debug_computation(false),
       momentum(0.0),
-      max_param_change(2.0) 
+      max_param_change(2.0), 
       minibatch_chunk_size(0) { }
   void Register(OptionsItf *opts) {
     opts->Register("store-component-stats", &store_component_stats,
@@ -143,16 +143,20 @@ class NnetTrainer {
  private:
   void ProcessOutputs(const NnetExample &eg,
                       NnetComputer *computer);
+
+  // Get node names of all recurrent connections from output nodes.
+  void GetRecurrentOutputNames(std::vector<std::string>
+		               *recurrent_output_names);
  
   // Find (names, output matrix) pairs of all the recurrent connections from
   // the previous minibatch. The output matrix only includes the recurrent
   // output of the last frame of each chunk in the previous minibatch. 
   void GetRecurrentOutputs(int32 chunk_size,
 		           int32 num_chunks,
-			   bool is_first_minibatch,
 		           NnetComputer &computer,
+			   std::vector<std::string> &recurrent_output_names,
 		           std::vector<std::pair<std::string,
-			   MatrixBase<BaseFloat> > > *r);
+			   Matrix<BaseFloat> > > *r);
 
   const NnetTrainerOptions config_;
   Nnet *nnet_;

@@ -66,7 +66,7 @@ NnetIo::NnetIo(const std::string &name,
     indexes[i].t = t_begin + i;
 }
 
-int32 NnetIo::NumFramesPerChunk() {
+int32 NnetIo::NumFramesPerChunk() const {
   std::vector<Index>::const_iterator iter = indexes.begin(),
                                       end = indexes.end();
   unordered_set<int32> frame_indexes;
@@ -76,7 +76,7 @@ int32 NnetIo::NumFramesPerChunk() {
   return static_cast<int32>(frame_indexes.size());
 }
 
-int32 NnetIo::NumChunks() {
+int32 NnetIo::NumChunks() const {
   std::vector<Index>::const_iterator iter = indexes.begin(),
 	                              end = indexes.end();
   int32 n = 0;
@@ -114,10 +114,10 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
 		             int32 left_context,
 	                     int32 right_context,
 		             int32 *ptr_num_chunks,
-			     std::vector<NnetExample> *splitted) {
+			     std::vector<NnetExample> *splitted) const {
   KALDI_ASSERT(new_chunk_size > 0);
   int32 old_chunk_size = -1, num_chunks = -1, num_input_frames_per_chunk = -1,
-	num_minbatches = -1;
+	num_minibatches = -1;
 
   // compute chunk size, num of chunks in minibatch and num of minibatches
   // after split from output
@@ -147,7 +147,7 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
     for (int32 f = 0; f < static_cast<int32>(io.size()); f++) {
       eg.io[f].name = io[f].name;
       if (eg.io[f].name == "output" || eg.io[f].NumFramesPerChunk() 
-	  == old_chunk_size) { // output or other NnetIo of the same size
+	  == old_chunk_size) { // output or other NnetIo that has the same size
         eg.io[f].indexes.resize(num_chunks * new_chunk_size);
 	for (int n = 0; n < num_chunks; n++) {
 	  int32 src_begin_pos = n * old_chunk_size + i * new_chunk_size,
@@ -155,7 +155,7 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
                 dst_begin_pos = n * new_chunk_size;
 	  // copy indexes
 	  std::copy(io[f].indexes.begin() + src_begin_pos,
-		    io[f].indexes.begin() + src_end,
+		    io[f].indexes.begin() + src_end_pos,
 		    eg.io[f].indexes.begin() + dst_begin_pos);
           // modify indexes "t"
 	  for (int32 t = 0; t < new_chunk_size; t++)
@@ -194,7 +194,7 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
 			+ (i == num_minibatches - 1 ? extra_right_frames : 0));
 	  //copy indexes
           std::copy(io[f].indexes.begin() + src_begin_pos,
-	            io[f].indexes.begin() + src_end,
+	            io[f].indexes.begin() + src_end_pos,
 		    eg.io[f].indexes.begin() + dst_begin_pos);
 	  // modify indexes "t"
 	  int32 t = -left_context - (i == 0 ? extra_left_frames : 0);
@@ -214,7 +214,7 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
 		dst_begin_pos = n;
 	  // copy indexes
 	  std::copy(io[f].indexes.begin() + src_begin_pos,
-		    io[f].indexes.begin() + src_end,
+		    io[f].indexes.begin() + src_end_pos,
 		    eg.io[f].indexes.begin() + dst_begin_pos);
 	  // copy corresponding features
 	  std::vector<bool> keep_rows(io[f].features.NumRows(), false);
