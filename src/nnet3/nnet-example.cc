@@ -150,8 +150,12 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
   for (int32 i = 0; iter != end; iter++, i++) {
     NnetExample &eg = *iter;
     eg.io.resize(io.size());
-    for (int32 f = 0; f < static_cast<int32>(io.size()); f++) {
+    int32 num_feats = static_cast<int32>(io.size());
+    std::vector<std::vector<GeneralMatrix const*> > output_lists(num_feats);
+    std::vector<std::vector<GeneralMatrix> > output_matrices(num_feats);
+    for (int32 f = 0; f < num_feats; f++) {
       eg.io[f].name = io[f].name;
+      output_matrices[f].resize(num_chunks);
       if (io[f].name == "output" || io[f].NumFramesPerChunk() 
 	  == old_chunk_size) { // output or other NnetIo that has the same size
         eg.io[f].indexes.resize(num_chunks * new_chunk_size);
@@ -171,7 +175,8 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
 	  for (int32 j = src_begin_pos; j < src_end_pos; j++)
 	    keep_rows[j] = true;
 	  FilterGeneralMatrixRows(io[f].features, keep_rows,
-			          &(eg.io[f].features));
+			          &(output_matrices[f][n]));
+	  output_lists[f].push_back(&(output_matrices[f][n]));
 	}
       } else if (io[f].name == "input") { // input
         // new chunks in the first/last minibatches should also include
@@ -205,8 +210,9 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
 	  std::vector<bool> keep_rows(io[f].features.NumRows(), false);
 	  for (int32 j = src_begin_pos; j < src_end_pos; j++)
 	    keep_rows[j] = true;
-	  FilterGeneralMatrixRows(io[f].features, keep_rows,
-			          &(eg.io[f].features));
+          FilterGeneralMatrixRows(io[f].features, keep_rows,
+			          &(output_matrices[f][n]));
+	  output_lists[f].push_back(&(output_matrices[f][n]));
 	}
       } else if (io[f].NumFramesPerChunk() == 1) { // e.g. ivector
         eg.io[f].indexes.resize(num_chunks);
@@ -221,10 +227,12 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
 	  std::vector<bool> keep_rows(io[f].features.NumRows(), false);
 	  for (int32 j = src_begin_pos; j < src_end_pos; j++)
 	    keep_rows[j] = true;
-	  FilterGeneralMatrixRows(io[f].features, keep_rows,
-			          &(eg.io[f].features));
+          FilterGeneralMatrixRows(io[f].features, keep_rows,
+			          &(output_matrices[f][n]));
+	  output_lists[f].push_back(&(output_matrices[f][n]));
 	}
       }
+      AppendGeneralMatrixRows(output_lists[f], &(eg.io[f].features));
     }
   }
 }

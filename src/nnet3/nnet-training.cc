@@ -77,49 +77,58 @@ void NnetTrainer::Train(const NnetExample &eg) {
     std::vector<std::string> recurrent_output_names;
     GetRecurrentOutputNodeNames(&recurrent_output_names); //TODO: avoid calling it every minibatch
 
-    std::vector<std::pair<std::string, Matrix<BaseFloat> > > recurrent_outputs; 
+    // to be added to NnetIo as outputs
+    std::vector<Matrix<BaseFloat> > zero_matrices_as_output;
+
+    std::vector<Matrix<BaseFloat> > recurrent_outputs; 
 
     std::vector<NnetExample>::iterator iter = splitted.begin();
     for (; iter != splitted.end(); ++iter) {
-      KALDI_LOG << "num_frames=" << iter->io[0].NumFramesPerChunk() << " " << iter->io[1].NumFramesPerChunk() << " " <<iter->io[2].NumFramesPerChunk(); // debug
-      // Add zero matrices in r as additional inputs for the first minibatch
       if (iter == splitted.begin()) {
         recurrent_outputs.reserve(recurrent_output_names.size());
 	for (int32 i = 0; i < static_cast<int32>(recurrent_output_names.size());
 	     i++) {
 	  std::string node_name = recurrent_output_names[i];
-	  Matrix<BaseFloat> zero_matrix = Matrix<BaseFloat>(num_chunks,
+
+	  // create zero matrices for outputs
+          zero_matrices_as_output.push_back(Matrix<BaseFloat>(
+			  num_chunks * config_.minibatch_chunk_size,
+			  nnet_->OutputDim(node_name)));
+
+	  // create zero matrices and add it to recurrent_outputs as additional
+	  // inputs for the first minibatch
+	  Matrix<BaseFloat> zero_matrix_as_input = Matrix<BaseFloat>(num_chunks,
 			  nnet_->OutputDim(node_name));
-          recurrent_outputs.push_back(std::make_pair(node_name, zero_matrix));
+          recurrent_outputs.push_back(zero_matrix_as_input);
 	}
       }
 
       for (int32 i = 0; i < static_cast<int32>(recurrent_outputs.size()); i++) {
 	// Add to NnetIo the recurrent connections from the previous minibatch
 	// as additional inputs
-	iter->io.push_back(NnetIo(recurrent_outputs[i].first
-	    + "_STATE_PREVIOUS_MINIBATCH", 0, recurrent_outputs[i].second));
+	iter->io.push_back(NnetIo(recurrent_output_names[i]
+	    + "_STATE_PREVIOUS_MINIBATCH", 0, recurrent_outputs[i]));
 	// Correct the indexes: swap indexes "n" and "t" so that 
 	// n ranges from 0 to feats.NumRows() - 1 and t is always 0
-	std::vector<Index> &indexes = iter->io.back().indexes;
-	for (int32 j = 0; j < static_cast<int32>(indexes.size()); j++)
-	  std::swap(indexes[j].n, indexes[j].t);
+	std::vector<Index> &indexes_input = iter->io.back().indexes;
+	for (int32 j = 0; j < static_cast<int32>(indexes_input.size()); j++)
+	  std::swap(indexes_input[j].n, indexes_input[j].t);
 
 	// Add to NnetIo the recurrent connections in the current minibatch 
 	// as additional outputs. Actually the contents of output matrix is
-	// irrelevant; we don't need it as supervision. We only need its 
-	// NunRows info for NnetIo::indexes.
-	iter->io.push_back(NnetIo(recurrent_outputs[i].first,
-	    0, recurrent_outputs[i].second));
+	// irrelevant; we don't need it as supervision; we only need its 
+	// NunRows info for NnetIo::indexes. So we just use zero matrix.
+	iter->io.push_back(NnetIo(recurrent_output_names[i], 0,
+			   zero_matrices_as_output[i]));
         // correct the indexes.
-	indexes = iter->io.back().indexes;
+	std::vector<Index> &indexes_output = iter->io.back().indexes;
 	for (int32 n = 0, j = 0; n < num_chunks; n++)
 	  for (int32 t = 0; t < config_.minibatch_chunk_size; t++, j++) {
-	    indexes[j].n = n;
-	    indexes[j].t = t;
+	    indexes_output[j].n = n;
+	    indexes_output[j].t = t;
 	  }
       }
-     
+
       bool need_model_derivative = true; 
       ComputationRequest request;
       GetComputationRequest(*nnet_, *iter, need_model_derivative,
@@ -140,7 +149,7 @@ void NnetTrainer::Train(const NnetExample &eg) {
       // Update the recurrent output matrices in recurrent_outputs
       // as additional inputs for the next minibatch
       GetRecurrentOutputs(config_.minibatch_chunk_size, num_chunks, computer,
-		          &recurrent_outputs);
+		          recurrent_output_names, &recurrent_outputs);
     }
   }
 
@@ -196,23 +205,25 @@ void NnetTrainer::GetRecurrentOutputNodeNames(std::vector<std::string>
   for (int32 i = 0; i < static_cast<int32>(nnet_->NumNodes()); i++)
     if (nnet_->IsOutputNode(i) && nnet_->GetNodeName(i) != "output")
       recurrent_output_names->push_back(nnet_->GetNodeName(i));
-  for (int32 i = 0; i < static_cast<int32>(recurrent_output_names->size()); i++) //debug
-    KALDI_LOG << "recurrent_output_name=" << (*recurrent_output_names)[i]; //debug
 }
 
 void NnetTrainer::GetRecurrentOutputs(int32 chunk_size,
 		                      int32 num_chunks,
 		                      NnetComputer &computer,
-		                      std::vector
-				      <std::pair<std::string, Matrix<BaseFloat> > > 
+		                      std::vector<std::string>
+				      &recurrent_output_names,
+				      std::vector<Matrix<BaseFloat> > 
 				      *recurrent_outputs) {
-  std::vector<std::pair<std::string, Matrix<BaseFloat> > >::iterator
-	  iter = recurrent_outputs->begin(), end = recurrent_outputs->end();
-  for (; iter != end; iter++) {
-    std::string node_name = iter->first;
+  KALDI_ASSERT(recurrent_output_names.size() == recurrent_outputs->size());
+  std::vector<std::string>::const_iterator
+	  iter = recurrent_output_names.begin(),
+	  end = recurrent_output_names.end();
+  std::vector<Matrix<BaseFloat> >::iterator iter2 = recurrent_outputs->begin();
+  for (; iter != end; ++iter, ++iter2) {
+    std::string node_name = *iter;
     // get the cuda matrix correspoding to the recurrent output
     const CuMatrixBase<BaseFloat> &r_cuda_all = computer.GetOutput(node_name);
-    KALDI_ASSERT(r_cuda_all.NumRows() == num_chunks * chunk_size); //TODO: need to confirm if it is still the case when chunk_left_context > 0
+    KALDI_ASSERT(r_cuda_all.NumRows() == num_chunks * chunk_size);
 
     // only copy the rows corresponding to the recurrent output of the
     // last frame of each chunk in the previous minibatch
@@ -224,8 +235,8 @@ void NnetTrainer::GetRecurrentOutputs(int32 chunk_size,
     CuMatrix<BaseFloat> r_cuda(num_chunks, r_cuda_all.NumCols());
     r_cuda.CopyRows(r_cuda_all, indexes_cuda);
 
-    // copy output matrix to (node_name : matrix) pair
-    iter->second.CopyFromMat(r_cuda);
+    // update recurrent output matrix
+    iter2->CopyFromMat(r_cuda);
   }
 }
 
