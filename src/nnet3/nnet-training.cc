@@ -75,7 +75,7 @@ void NnetTrainer::Train(const NnetExample &eg) {
 
     KALDI_LOG << "splitted size=" << splitted.size(); // debug
     std::vector<std::string> recurrent_output_names;
-    GetRecurrentOutputNodeNames(&recurrent_output_names); //TODO: avoid calling it every minibatch
+    GetRecurrentOutputNodeNames(*nnet_, &recurrent_output_names); //TODO: avoid calling it every minibatch
 
     // to be added to NnetIo as outputs
     std::vector<Matrix<BaseFloat> > zero_matrices_as_output;
@@ -88,7 +88,7 @@ void NnetTrainer::Train(const NnetExample &eg) {
         recurrent_outputs.reserve(recurrent_output_names.size());
 	for (int32 i = 0; i < static_cast<int32>(recurrent_output_names.size());
 	     i++) {
-	  std::string node_name = recurrent_output_names[i];
+	  const std::string &node_name = recurrent_output_names[i];
 
 	  // create zero matrices for outputs
           zero_matrices_as_output.push_back(Matrix<BaseFloat>(
@@ -197,16 +197,6 @@ void NnetTrainer::ProcessOutputs(const NnetExample &eg,
   }
 }
 
-void NnetTrainer::GetRecurrentOutputNodeNames(std::vector<std::string>
-		                              *recurrent_output_names) {
-  // We assume all output nodes except the one named "output" are 
-  // recurrent connections.
-  recurrent_output_names->clear();
-  for (int32 i = 0; i < static_cast<int32>(nnet_->NumNodes()); i++)
-    if (nnet_->IsOutputNode(i) && nnet_->GetNodeName(i) != "output")
-      recurrent_output_names->push_back(nnet_->GetNodeName(i));
-}
-
 void NnetTrainer::GetRecurrentOutputs(int32 chunk_size,
 		                      int32 num_chunks,
 		                      NnetComputer &computer,
@@ -220,7 +210,7 @@ void NnetTrainer::GetRecurrentOutputs(int32 chunk_size,
 	  end = recurrent_output_names.end();
   std::vector<Matrix<BaseFloat> >::iterator iter2 = recurrent_outputs->begin();
   for (; iter != end; ++iter, ++iter2) {
-    std::string node_name = *iter;
+    const std::string &node_name = *iter;
     // get the cuda matrix correspoding to the recurrent output
     const CuMatrixBase<BaseFloat> &r_cuda_all = computer.GetOutput(node_name);
     KALDI_ASSERT(r_cuda_all.NumRows() == num_chunks * chunk_size);

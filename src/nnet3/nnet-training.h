@@ -144,10 +144,6 @@ class NnetTrainer {
   void ProcessOutputs(const NnetExample &eg,
                       NnetComputer *computer);
 
-  // Get node names of all recurrent connections from output nodes.
-  void GetRecurrentOutputNodeNames(std::vector<std::string>
-		               *recurrent_output_names);
- 
   // Update output matrix in current_outputs of all the recurrent connections
   // from the previous minibatch. The output matrix only includes the recurrent
   // output of the last frame of each chunk in the previous minibatch. 

@@ -53,6 +53,11 @@ int32 NumOutputNodes(const Nnet &nnet);
 /// returns the number of input nodes of this nnet.
 int32 NumInputNodes(const Nnet &nnet);
 
+/// Get node names of all recurrent connections from output nodes.
+void GetRecurrentOutputNodeNames(const Nnet &nnet,
+		                 std::vector<std::string>
+		                 *recurrent_output_names);
+
 /// Calls SetZero (with the given is_gradient parameter) on all updatable
 /// components of the nnet.
 void SetZero(bool is_gradient,

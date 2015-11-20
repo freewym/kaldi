@@ -40,6 +40,17 @@ int32 NumInputNodes(const Nnet &nnet) {
   return ans;
 }
 
+void GetRecurrentOutputNodeNames(const Nnet &nnet,
+		                 std::vector<std::string>
+		                 *recurrent_output_names) {
+  // We assume all output nodes except the one named "output" are 
+  // recurrent connections.
+  recurrent_output_names->clear();
+  for (int32 i = 0; i < static_cast<int32>(nnet.NumNodes()); i++)
+    if (nnet.IsOutputNode(i) && nnet.GetNodeName(i) != "output")
+      recurrent_output_names->push_back(nnet.GetNodeName(i));
+}
+
 
 bool IsSimpleNnet(const Nnet &nnet) {
   // check that we have just one output node and it is

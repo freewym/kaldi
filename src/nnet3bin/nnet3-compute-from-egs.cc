@@ -23,6 +23,7 @@
 #include "nnet3/nnet-nnet.h"
 #include "nnet3/nnet-example-utils.h"
 #include "nnet3/nnet-optimize.h"
+#include "nnet3/nnet-utils.h"
 #include "transform/lda-estimate.h"
 
 
@@ -37,15 +38,63 @@ class NnetComputerFromEg {
   // Compute the output (which will have the same number of rows as the number
   // of Indexes in the output of the eg), and put it in "output".
   void Compute(const NnetExample &eg, Matrix<BaseFloat> *output) {
+    // make a copy of eg so that we can keep eg const
+    NnetExample eg_modified(eg);
+
+    int32 num_chunks = -1, chunk_size = -1;
+    for (int32 f = 0; f < static_cast<int32>(eg.io.size()); f++)
+      if (eg.io[f].name == "output") {
+        num_chunks = eg.io[f].NumChunks();
+        chunk_size = eg.io[f].NumFramesPerChunk();
+      }
+    KALDI_LOG << "num_chunks=" << num_chunks << " chunk_size=" << chunk_size;//debug
+
+    std::vector<std::string> recurrent_output_names;
+    GetRecurrentOutputNodeNames(nnet_, &recurrent_output_names);
+
+    for (int32 i = 0; i < static_cast<int32>(recurrent_output_names.size());
+         i++) {
+      std::string &node_name = recurrent_output_names[i];
+      KALDI_LOG <<"node_name=" <<node_name;//debug
+
+      // Add to NnetIo the recurrent connections as additional inputs
+      Matrix<BaseFloat> zero_matrix_as_input = Matrix<BaseFloat>(
+		      num_chunks, nnet_.OutputDim(node_name));
+      eg_modified.io.push_back(NnetIo(recurrent_output_names[i]
+	      + "_STATE_PREVIOUS_MINIBATCH", 0, zero_matrix_as_input));
+      // Correct the indexes: swap indexes "n" and "t" so that 
+      // n ranges from 0 to feats.NumRows() - 1 and t is always 0
+      std::vector<Index> &indexes_input = eg_modified.io.back().indexes;
+      for (int32 j = 0; j < static_cast<int32>(indexes_input.size()); j++)
+        std::swap(indexes_input[j].n, indexes_input[j].t);
+
+      // Add to NnetIo the recurrent connections in the current minibatch 
+      // as additional outputs. Actually the contents of output matrix is
+      // irrelevant; we don't need it as supervision; we only need its 
+      // NunRows info for NnetIo::indexes. So we just use zero matrix.
+      Matrix<BaseFloat> zero_matrix_as_output = Matrix<BaseFloat>(
+		      num_chunks * chunk_size, nnet_.OutputDim(node_name));
+      eg_modified.io.push_back(NnetIo(recurrent_output_names[i], 0,
+		  zero_matrix_as_output));
+      // correct the indexes.
+      std::vector<Index> &indexes_output = eg_modified.io.back().indexes;
+      for (int32 n = 0, j = 0; n < num_chunks; n++)
+        for (int32 t = 0; t < chunk_size; t++, j++) {
+	  indexes_output[j].n = n;
+	  indexes_output[j].t = t;
+        } 
+    }
+
     ComputationRequest request;
     bool need_backprop = false, store_stats = false;
-    GetComputationRequest(nnet_, eg, need_backprop, store_stats, &request);
+    GetComputationRequest(nnet_, eg_modified, need_backprop, store_stats,
+		          &request);
     const NnetComputation &computation = *(compiler_.Compile(request));
     NnetComputeOptions options;
     if (GetVerboseLevel() >= 3)
       options.debug = true;
     NnetComputer computer(options, computation, nnet_, NULL);
-    computer.AcceptInputs(nnet_, eg.io);
+    computer.AcceptInputs(nnet_, eg_modified.io);
     computer.Forward();
     const CuMatrixBase<BaseFloat> &nnet_output = computer.GetOutput("output");
     output->Resize(nnet_output.NumRows(), nnet_output.NumCols());
