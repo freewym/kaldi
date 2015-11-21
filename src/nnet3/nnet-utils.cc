@@ -135,7 +135,7 @@ static void ComputeSimpleNnetContextForShift(
   request.outputs.push_back(output);
   if (nnet.GetNodeIndex("ivector") != -1)
     request.inputs.push_back(ivector);
-  // add additinal outputs to request
+  // add additinal inputs to request
   for (int32 i = 0; i < static_cast<int32>(r.size()); i++)
     if (nnet.GetNodeIndex(r[i].name) != -1)
       request.inputs.push_back(r[i]);

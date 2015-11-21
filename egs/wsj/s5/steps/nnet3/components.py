@@ -90,14 +90,20 @@ def AddOutputNode(config_lines, input, label_delay=None):
     else:
         component_nodes.append('output-node name=output input=Offset({0},{1})'.format(input['descriptor'], label_delay))
 
-def AddRecurrentOutputNodes(config_lines, name, recurrent_projection_dim = 0):
+def AddRecurrentOutputNodes(config_lines, name, label_delay=None, recurrent_projection_dim = 0):
     component_nodes = config_lines['component-nodes']
-    component_nodes.append('output-node name=output_{0}_c_t input={0}_c_t'.format(name))
+    if label_delay is None:
+        component_nodes.append('output-node name=output_{0}_c_t input={0}_c_t'.format(name))
+    else:
+        component_nodes.append('output-node name=output_{0}_c_t input=Offset({0}_c_t,{1})'.format(name, label_delay))
     if (recurrent_projection_dim == 0):
         recurrent_connection = "m_t"
     else:
         recurrent_connection = "r_t"
-    component_nodes.append('output-node name=output_{0}_{1} input={0}_{1}'.format(name, recurrent_connection))
+    if label_delay is None:
+        component_nodes.append('output-node name=output_{0}_{1} input={0}_{1}'.format(name, recurrent_connection))
+    else:
+	component_nodes.append('output-node name=output_{0}_{1} input=Offset({0}_{1},{2})'.format(name, recurrent_connection, label_delay))
 
 def AddFinalLayer(config_lines, input, output_dim, ng_affine_options = "", label_delay=None):
     prev_layer_output = AddAffineLayer(config_lines, "Final", input, output_dim, ng_affine_options)

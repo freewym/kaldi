@@ -186,7 +186,7 @@ if __name__ == "__main__":
         nodes.AddFinalLayer(config_lines, prev_layer_output, args.num_targets, args.ng_affine_options, args.label_delay)
 	# add recurrent output-nodes for state preserving training mode
 	if (args.state_preserving == "true"):
-	    nodes.AddRecurrentOutputNodes(config_lines, "Lstm{0}".format(i+1), args.recurrent_projection_dim)
+	    nodes.AddRecurrentOutputNodes(config_lines, "Lstm{0}".format(i+1), args.label_delay, args.recurrent_projection_dim)
         config_files['{0}/layer{1}.config'.format(args.config_dir, i+1)] = config_lines
         config_lines = {'components':[], 'component-nodes':[]}
 
