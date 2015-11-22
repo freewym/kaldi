@@ -50,7 +50,9 @@ class NnetComputerFromEg {
     KALDI_LOG << "num_chunks=" << num_chunks << " chunk_size=" << chunk_size;//debug
 
     std::vector<std::string> recurrent_output_names;
-    GetRecurrentOutputNodeNames(nnet_, &recurrent_output_names);
+    std::vector<std::string> recurrent_node_names;
+    GetRecurrentOutputNodeNames(nnet_, &recurrent_output_names,
+		                &recurrent_node_names);
 
     for (int32 i = 0; i < static_cast<int32>(recurrent_output_names.size());
          i++) {

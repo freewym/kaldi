@@ -127,6 +127,8 @@ class ForwardingDescriptor {
   /// This function appends to "node_indexes" all the node indexes
   // that this descriptor may access.
   virtual void GetNodeDependencies(std::vector<int32> *node_indexes) const = 0;
+
+  virtual std::string Type() const = 0;
   
   virtual ~ForwardingDescriptor() { }
   ForwardingDescriptor() { }
@@ -147,6 +149,8 @@ class SimpleForwardingDescriptor: public ForwardingDescriptor {
   // written form is just the node-name of src_node_.
   virtual void WriteConfig(std::ostream &os,
                            const std::vector<std::string> &node_names) const;
+
+  virtual std::string Type() const { return "SimpleForwardingDescriptor"; }
 
   SimpleForwardingDescriptor(int32 src_node): src_node_(src_node) {
     KALDI_ASSERT(src_node >= 0);
@@ -169,12 +173,23 @@ class OffsetForwardingDescriptor: public ForwardingDescriptor {
   virtual int32 Modulus() const { return src_->Modulus(); }
   
   virtual void GetNodeDependencies(std::vector<int32> *node_indexes) const;
+
+  virtual std::string Type() const { return "OffsetForwardingDescriptor"; }
   
   // takes ownership of src.
   OffsetForwardingDescriptor(ForwardingDescriptor *src,
                              Index offset): src_(src), offset_(offset) { }
   
   virtual ~OffsetForwardingDescriptor() { delete src_; }
+
+  // defined in nnet-utils.h
+  friend void GetIntoForwardingDescriptor(const Nnet &Nnet,
+		                          const ForwardingDescriptor
+		                          &this_descriptor,
+		                          const std::vector<std::string>
+				          &recurrent_node_names,
+				          std::vector<int32>
+					  *recurrent_offsets);
  private:
   ForwardingDescriptor *src_;  // Owned here.
   Index offset_;  // The index-offset to be added to the index.
@@ -197,10 +212,21 @@ class SwitchingForwardingDescriptor: public ForwardingDescriptor {
   // that this descriptor may access.
   virtual void GetNodeDependencies(std::vector<int32> *node_indexes) const;
 
+  virtual std::string Type() const { return "SwitchingForwardingDescriptor"; }
+
   // takes ownership of items in src.
   SwitchingForwardingDescriptor(std::vector<ForwardingDescriptor*> &src):
       src_(src) { }
   virtual ~SwitchingForwardingDescriptor() { DeletePointers(&src_); }
+
+  // defined in nnet-utils.h
+  friend void GetIntoForwardingDescriptor(const Nnet &nnet,
+		                          const ForwardingDescriptor
+		                          &this_descriptor,
+		                          const std::vector<std::string>
+				          &recurrent_node_names,
+				          std::vector<int32>
+					  *recurrent_offsets);
  private:
   // Pointers are owned here.
   std::vector<ForwardingDescriptor*> src_; 
@@ -226,12 +252,23 @@ class RoundingForwardingDescriptor: public ForwardingDescriptor {
   // that this descriptor may access.
   virtual void GetNodeDependencies(std::vector<int32> *node_indexes) const;
 
+  virtual std::string Type() const { return "RoundingForwardingDescriptor"; }
+
   // takes ownership of src.
   RoundingForwardingDescriptor(ForwardingDescriptor *src,
                                int32 t_modulus):
       src_(src), t_modulus_(t_modulus) { }
 
   virtual ~RoundingForwardingDescriptor() { delete src_; }
+
+  // defined in nnet-utils.h
+  friend void GetIntoForwardingDescriptor(const Nnet &nnet,
+		                          const ForwardingDescriptor
+		                          &this_descriptor,
+		                          const std::vector<std::string>
+				          &recurrent_node_names,
+				          std::vector<int32>
+					  *recurrent_offsets);
  private:
   ForwardingDescriptor *src_;
   int32 t_modulus_;
@@ -255,6 +292,8 @@ class ReplaceIndexForwardingDescriptor: public ForwardingDescriptor {
   // that this descriptor may access.
   virtual void GetNodeDependencies(std::vector<int32> *node_indexes) const;
 
+  virtual std::string Type() const { return "ReplaceIndexForwardingDescriptor"; }
+
   // takes ownership of src.
   ReplaceIndexForwardingDescriptor(ForwardingDescriptor *src,
                                    VariableName variable_name,
@@ -262,6 +301,15 @@ class ReplaceIndexForwardingDescriptor: public ForwardingDescriptor {
       src_(src), variable_name_(variable_name), value_(value) { }
   
   virtual ~ReplaceIndexForwardingDescriptor() { delete src_; }
+  
+  // defined in nnet-utils.h
+  friend void GetIntoForwardingDescriptor(const Nnet &nnet,
+		                          const ForwardingDescriptor
+		                          &this_descriptor,
+		                          const std::vector<std::string>
+				          &recurrent_node_names,
+				          std::vector<int32>
+					  *recurrent_offsets);
  private:
   ForwardingDescriptor *src_;
   VariableName variable_name_;
@@ -318,6 +366,8 @@ class SumDescriptor {
   
   virtual ~SumDescriptor() { }
 
+  virtual std::string Type() const = 0;
+
   // This function appends to "node_indexes" a list (not necessarily sorted or
   // unique) of all the node indexes that this descriptor may forward data from.
   virtual void GetNodeDependencies(std::vector<int32> *node_indexes) const = 0;
@@ -354,6 +404,8 @@ class UnarySumDescriptor: public SumDescriptor {
                             std::vector<Cindex> *input_terms) const;
   virtual int32 Dim(const Nnet &nnet) const;
 
+  virtual std::string Type() const { return "UnarySumDescriptor"; }
+
   // This function appends to "node_indexes" a list (not necessarily sorted or
   // unique) of all the node indexes that this descriptor may forward data from.
   virtual void GetNodeDependencies(std::vector<int32> *node_indexes) const;
@@ -368,6 +420,13 @@ class UnarySumDescriptor: public SumDescriptor {
                      bool required = true):
       src_(src), required_(required) { }
   virtual ~UnarySumDescriptor() { delete src_; }
+
+  // defined in nnet-utils.h
+  friend void GetIntoSumDescriptor(const Nnet &nnet,
+		                   const SumDescriptor &this_descriptor,
+	                           const std::vector<std::string>
+	                           &recurrent_node_names,
+		                   std::vector<int32> *recurrent_offsets);
  private:
   ForwardingDescriptor *src_;
   bool required_;
@@ -391,6 +450,8 @@ class BinarySumDescriptor: public SumDescriptor {
                             const CindexSet &cindex_set,
                             std::vector<Cindex> *input_terms) const;
   virtual int32 Dim(const Nnet &nnet) const;
+
+  virtual std::string Type() const { return "BinarySumDescriptor"; }
   
   // This function appends to "node_indexes" a list (not necessarily sorted or
   // unique) of all the node indexes that this descriptor may forward data from.
@@ -405,6 +466,13 @@ class BinarySumDescriptor: public SumDescriptor {
   BinarySumDescriptor(Operation op, SumDescriptor *src1, SumDescriptor *src2):
       op_(op), src1_(src1), src2_(src2) {}
   virtual ~BinarySumDescriptor() { delete src1_; delete src2_; }
+
+  // defined in nnet-utils.h
+  friend void GetIntoSumDescriptor(const Nnet &nnet,
+		                   const SumDescriptor &this_descriptor,
+	                           const std::vector<std::string>
+	                           &recurrent_node_names,
+		                   std::vector<int32> *recurrent_offsets);
  private:
   Operation op_;
   SumDescriptor *src1_;

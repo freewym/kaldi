@@ -53,10 +53,35 @@ int32 NumOutputNodes(const Nnet &nnet);
 /// returns the number of input nodes of this nnet.
 int32 NumInputNodes(const Nnet &nnet);
 
-/// Get node names of all recurrent connections from output nodes.
+/// Get node names of all recurrent output nodes from output nodes, and 
+/// node names of their "input" field as specified in the config file.
+/// The assumption is that all output nodes except the one named "output" are
+/// recurrent outputs, and for a recurrent output node, its input can only
+/// contain one component node.
 void GetRecurrentOutputNodeNames(const Nnet &nnet,
 		                 std::vector<std::string>
-		                 *recurrent_output_names);
+		                 *recurrent_output_names,
+				 std::vector<std::string>
+				 *recurrent_node_names);
+
+/// Get offset of each recurrent node. The input argument recurrent_node_names
+/// is one of the output arguments of GetRecurrentOutputNodeNames().
+void GetRecurrentNodeOffsets(const Nnet &nnet,
+		             const std::vector<std::string>
+			     &recurrent_node_names,
+			     std::vector<int32> *recurrent_offsets);
+
+void GetIntoSumDescriptor(const Nnet &nnet,
+		          const SumDescriptor &this_descriptor,
+	                  const std::vector<std::string>
+	                  &recurrent_node_names,
+		          std::vector<int32> *recurrent_offsets);
+
+void GetIntoForwardingDescriptor(const Nnet &nnet,
+		                 const ForwardingDescriptor &this_descriptor,
+		                 const std::vector<std::string>
+				 &recurrent_node_names,
+				 std::vector<int32> *recurrent_offsets);
 
 /// Calls SetZero (with the given is_gradient parameter) on all updatable
 /// components of the nnet.

@@ -75,7 +75,13 @@ void NnetTrainer::Train(const NnetExample &eg) {
 
     KALDI_LOG << "splitted size=" << splitted.size(); // debug
     std::vector<std::string> recurrent_output_names;
-    GetRecurrentOutputNodeNames(*nnet_, &recurrent_output_names); //TODO: avoid calling it every minibatch
+    std::vector<std::string> recurrent_node_names;
+    std::vector<int32> recurrent_offsets;
+    GetRecurrentOutputNodeNames(*nnet_, &recurrent_output_names,
+		                &recurrent_node_names); //TODO: avoid calling it every minibatch
+    GetRecurrentNodeOffsets(*nnet_, recurrent_node_names, &recurrent_offsets);
+    for (int32 i = 0; i < recurrent_offsets.size(); i++) //debug
+      KALDI_LOG << recurrent_node_names[i] << " offset:" << recurrent_offsets[i]; //debug
 
     // to be added to NnetIo as outputs
     std::vector<Matrix<BaseFloat> > zero_matrices_as_output;
@@ -149,7 +155,8 @@ void NnetTrainer::Train(const NnetExample &eg) {
       // Update the recurrent output matrices in recurrent_outputs
       // as additional inputs for the next minibatch
       GetRecurrentOutputs(config_.minibatch_chunk_size, num_chunks, computer,
-		          recurrent_output_names, &recurrent_outputs);
+		          recurrent_output_names, recurrent_offsets,
+			  &recurrent_outputs);
     }
   }
 
@@ -202,14 +209,16 @@ void NnetTrainer::GetRecurrentOutputs(int32 chunk_size,
 		                      NnetComputer &computer,
 		                      std::vector<std::string>
 				      &recurrent_output_names,
+				      std::vector<int32> &recurrent_offsets,
 				      std::vector<Matrix<BaseFloat> > 
 				      *recurrent_outputs) {
   KALDI_ASSERT(recurrent_output_names.size() == recurrent_outputs->size());
   std::vector<std::string>::const_iterator
 	  iter = recurrent_output_names.begin(),
 	  end = recurrent_output_names.end();
-  std::vector<Matrix<BaseFloat> >::iterator iter2 = recurrent_outputs->begin();
-  for (; iter != end; ++iter, ++iter2) {
+  std::vector<int32>::const_iterator iter2 = recurrent_offsets.begin();
+  std::vector<Matrix<BaseFloat> >::iterator iter3 = recurrent_outputs->begin();
+  for (; iter != end; ++iter, ++iter2, ++iter3) {
     const std::string &node_name = *iter;
     // get the cuda matrix correspoding to the recurrent output
     const CuMatrixBase<BaseFloat> &r_cuda_all = computer.GetOutput(node_name);
@@ -219,14 +228,14 @@ void NnetTrainer::GetRecurrentOutputs(int32 chunk_size,
     // last frame of each chunk in the previous minibatch
     std::vector<int32> indexes(num_chunks);
     for (int32 i = 0; i < num_chunks; i++)
-      indexes[i] = i * chunk_size + chunk_size - 1;
+      indexes[i] = i * chunk_size + chunk_size + *iter2;
     CuArray<int32> indexes_cuda(indexes);
 
     CuMatrix<BaseFloat> r_cuda(num_chunks, r_cuda_all.NumCols());
     r_cuda.CopyRows(r_cuda_all, indexes_cuda);
 
     // update recurrent output matrix
-    iter2->CopyFromMat(r_cuda);
+    iter3->CopyFromMat(r_cuda);
   }
 }
 
