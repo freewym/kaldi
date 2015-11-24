@@ -67,22 +67,25 @@ NnetIo::NnetIo(const std::string &name,
 }
 
 int32 NnetIo::NumFramesPerChunk() const {
-  std::vector<Index>::const_iterator iter = indexes.begin(),
-                                      end = indexes.end();
-  unordered_set<int32> frame_indexes;
+  std::vector<Index>::const_iterator begin = indexes.begin(),
+				     iter = begin, 
+                                     end = indexes.end();
+  unordered_set<int32> frame_indexes_t;
+  int32 n_offset = begin->n;
   for (; iter != end; ++iter)
-    if (iter->n == 0)
-      frame_indexes.insert(iter->t);
-  return static_cast<int32>(frame_indexes.size());
+    if (iter->n == n_offset)
+      frame_indexes_t.insert(iter->t);
+  return static_cast<int32>(frame_indexes_t.size());
 }
 
 int32 NnetIo::NumChunks() const {
-  std::vector<Index>::const_iterator iter = indexes.begin(),
-	                              end = indexes.end();
-  int32 n = 0;
+  std::vector<Index>::const_iterator begin = indexes.begin(),
+	                             iter = begin,
+	                             end = indexes.end();
+  int32 n_offset = begin->n, n = n_offset;
   for (; iter != end; ++iter)
     n = std::max(iter->n, n);
-  return n + 1;
+  return n - n_offset + 1;
 }
 
 void NnetExample::Write(std::ostream &os, bool binary) const {
@@ -117,7 +120,8 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
 			     std::vector<NnetExample> *splitted) const {
   KALDI_ASSERT(new_chunk_size > 0);
   int32 old_chunk_size = -1, num_chunks = -1, num_input_frames_per_chunk = -1,
-	num_minibatches = -1, extra_left_frames = -1, extra_right_frames = -1;
+	num_minibatches = -1, extra_left_frames = -1, extra_right_frames = -1,
+	output_t_begin = -1;
 
   for (int32 f = 0; f < static_cast<int32>(io.size()); f++)
     if (io[f].name == "output") {
@@ -128,13 +132,15 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
       *ptr_num_chunks = num_chunks;
       KALDI_ASSERT(old_chunk_size % new_chunk_size == 0);
       num_minibatches = old_chunk_size / new_chunk_size;
+      output_t_begin = io[f].indexes.begin()->t;
     }
   for (int32 f = 0; f < static_cast<int32>(io.size()); f++) 
     if (io[f].name == "input") {
       // compute num of input frames per chunk
       num_input_frames_per_chunk = io[f].NumFramesPerChunk();
       // compute extra left frames and extra right frames
-      extra_left_frames = - io[f].indexes[0].t - left_context;
+      extra_left_frames = output_t_begin - io[f].indexes.begin()->t
+	                  - left_context;
       extra_right_frames = num_input_frames_per_chunk - old_chunk_size
 		           - left_context - right_context
                            - extra_left_frames;
@@ -169,7 +175,7 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
 		    eg.io[f].indexes.begin() + dst_begin_pos);
 	  // modify indexes "t"
 	  for (int32 t = 0; t < new_chunk_size; t++)
-            eg.io[f].indexes[dst_begin_pos + t].t = t;
+            eg.io[f].indexes[dst_begin_pos + t].t = t + output_t_begin;
 	  // copy corresponding features
 	  std::vector<bool> keep_rows(io[f].features.NumRows(), false);
 	  for (int32 j = src_begin_pos; j < src_end_pos; j++)
@@ -205,7 +211,7 @@ void NnetExample::SplitChunk(int32 new_chunk_size,
 	  // modify indexes "t"
 	  int32 t = -left_context - (i == 0 ? extra_left_frames : 0);
 	  for (int32 j = 0; j < src_end_pos - src_begin_pos; j++, t++)
-	    eg.io[f].indexes[dst_begin_pos + j].t = t;
+	    eg.io[f].indexes[dst_begin_pos + j].t = t + output_t_begin;
 	  // copy corresponding features
 	  std::vector<bool> keep_rows(io[f].features.NumRows(), false);
 	  for (int32 j = src_begin_pos; j < src_end_pos; j++)
