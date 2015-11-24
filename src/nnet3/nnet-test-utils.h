@@ -49,6 +49,10 @@ struct NnetGenerationOptions {
       allow_final_nonlinearity(true) { }
 };
 
+void GenerateConfigSequenceStatePreservingLstm(
+		const NnetGenerationOptions &opts,
+		std::vector<std::string> *configs);
+
 /** Generates a sequence of at least one config files, output as strings, where
     the first in the sequence is the initial nnet, and the remaining ones may do
     things like add layers.  */

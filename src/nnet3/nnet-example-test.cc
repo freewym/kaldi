@@ -128,6 +128,11 @@ void UnitTestNnetSplitExampleBySplitChunkInExample() {
       Matrix<BaseFloat> feat;
       eg.io[f].features.GetMatrix(&feat);
       for (int32 i = 0; i < static_cast<int32>(egs_splitted.size()); i++) {
+        if (f == 0) {
+	  KALDI_LOG << i << "'th:";
+	  egs_splitted[i].Write(std::cerr, false);
+	  KALDI_LOG << "";
+	}
 	const std::vector<NnetIo> &io = egs_splitted[i].io;
 	// test if the number of data and indexes in a splitted example agree
         KALDI_ASSERT(io[f].features.NumRows() == io[f].indexes.size());
@@ -157,12 +162,6 @@ void UnitTestNnetSplitExampleBySplitChunkInExample() {
 	// test if the data matrices are correctly splitted
 	KALDI_ASSERT(ApproxEqual(feat_sub, feat_splitted,
 				 static_cast<BaseFloat>(0.001)));
-
-	if (f == 0) {
-	  KALDI_LOG << i << "'th:";
-	  egs_splitted[i].Write(std::cerr, false);
-	  KALDI_LOG << "";
-	}
       }
     } 
   }
