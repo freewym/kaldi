@@ -109,6 +109,84 @@ static void ProcessFile(const MatrixBase<BaseFloat> &feats,
   }
 }
 
+static void ProcessFile2(const MatrixBase<BaseFloat> &feats,
+                        const MatrixBase<BaseFloat> *ivector_feats,
+                        const Posterior &pdf_post,
+                        const std::string &utt_id,
+                        bool compress,
+                        int32 num_pdfs,
+                        int32 left_context,
+                        int32 right_context,
+                        int32 frames_per_eg,
+                        int64 *num_frames_written,
+                        int64 *num_egs_written,
+                        NnetExampleWriter *example_writer) {
+  KALDI_ASSERT(feats.NumRows() == static_cast<int32>(pdf_post.size()));
+  
+  for (int32 t = 0; t < feats.NumRows(); t += frames_per_eg) {
+
+    // At the end of the file we left shifted the frame window
+    // so that all examples have the same length (prevents the need
+    // for recompilations).
+    if (feats.NumRows() - t < frames_per_eg)
+      t = feats.NumRows() - frames_per_eg;
+
+
+    int32 tot_frames = left_context + frames_per_eg + right_context;
+
+    Matrix<BaseFloat> input_frames(tot_frames, feats.NumCols());
+    
+    // Set up "input_frames".
+    for (int32 j = -left_context; j < frames_per_eg + right_context; j++) {
+      int32 t2 = j + t;
+      if (t2 < 0) t2 = 0;
+      if (t2 >= feats.NumRows()) t2 = feats.NumRows() - 1;
+      SubVector<BaseFloat> src(feats, t2),
+          dest(input_frames, j + left_context);
+      dest.CopyFromVec(src);
+    }
+
+    NnetExample eg;
+    
+    // call the regular input "input".
+    eg.io.push_back(NnetIo("input", - left_context,
+                           input_frames));
+
+    // if applicable, add the iVector feature.
+    if (ivector_feats != NULL) {
+      // try to get closest frame to middle of window to get
+      // a representative iVector.
+      int32 closest_frame = t + (frames_per_eg / 2);
+      KALDI_ASSERT(ivector_feats->NumRows() > 0);
+      if (closest_frame >= ivector_feats->NumRows())
+        closest_frame = ivector_feats->NumRows() - 1;
+      Matrix<BaseFloat> ivector(1, ivector_feats->NumCols());
+      ivector.Row(0).CopyFromVec(ivector_feats->Row(closest_frame));
+      eg.io.push_back(NnetIo("ivector", 0, ivector));
+    }
+
+    // add the labels.
+    Posterior labels(frames_per_eg);
+    for (int32 i = 0; i < frames_per_eg; i++)
+      labels[i] = pdf_post[t + i];
+    // remaining posteriors for frames are empty.
+    eg.io.push_back(NnetIo("output", num_pdfs, 0, labels));
+    
+    if (compress)
+      eg.Compress();
+      
+    std::ostringstream os;
+    os << utt_id << "-" << t;
+
+    std::string key = os.str(); // key is <utt_id>-<frame_id>
+
+    *num_frames_written += frames_per_eg;
+    *num_egs_written += 1;
+
+    example_writer->Write(key, eg);
+  }
+}
+
 
 } // namespace nnet2
 } // namespace kaldi
@@ -139,7 +217,7 @@ int main(int argc, char *argv[]) {
         "   ark:- \n";
         
 
-    bool compress = true;
+    bool compress = true, left_shift_window = false;
     int32 num_pdfs = -1, left_context = 0, right_context = 0,
         num_frames = 1, length_tolerance = 100;
         
@@ -160,6 +238,9 @@ int main(int argc, char *argv[]) {
                 "features, as matrix.");
     po.Register("length-tolerance", &length_tolerance, "Tolerance for "
                 "difference in num-frames between feat and ivector matrices");
+    po.Register("left-shift-window", &left_shift_window, "If true then left"
+		"shift window for the last example to accomodate the all"
+		"num-frames frames; otherwise pad with the last frame.");
     
     po.Read(argc, argv);
 
@@ -221,11 +302,18 @@ int main(int argc, char *argv[]) {
           num_err++;
           continue;
         }
-          
-        ProcessFile(feats, ivector_feats, pdf_post, key, compress,
-                    num_pdfs, left_context, right_context, num_frames,
-                    &num_frames_written, &num_egs_written,
-                    &example_writer);
+        
+	if(!left_shift_window)   
+          ProcessFile(feats, ivector_feats, pdf_post, key, compress,
+                      num_pdfs, left_context, right_context, num_frames,
+                      &num_frames_written, &num_egs_written,
+                      &example_writer);
+	else
+	  ProcessFile2(feats, ivector_feats, pdf_post, key, compress,
+		       num_pdfs, left_context, right_context, num_frames,
+                       &num_frames_written, &num_egs_written,
+                       &example_writer);
+
         num_done++;
       }
     }

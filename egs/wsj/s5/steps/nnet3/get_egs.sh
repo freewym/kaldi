@@ -55,6 +55,8 @@ online_ivector_dir=  # can be used if we are including speaker information as iV
 cmvn_opts=  # can be used for specifying CMVN options, if feature type is not lda (if lda,
             # it doesn't make sense to use different options than were used as input to the
             # LDA transform).  This is used to turn off CMVN in the online-nnet experiments.
+left_shift_window=false  # If true then left shift window for the last example to accomodate
+                        # all frames_per_eg frames; otherwise pad with the last frame.
 
 echo "$0 $@"  # Print the command line for logging
 
@@ -80,6 +82,8 @@ if [ $# != 3 ]; then
   echo "  --num-frames-diagnostic <#frames;4000>           # Number of frames used in computing (train,valid) diagnostics"
   echo "  --num-valid-frames-combine <#frames;10000>       # Number of frames used in getting combination weights at the"
   echo "                                                   # very end."
+  echo "  --left-shift-window <bool;false>                 # If true then left shift window for the last example to accomodate"
+  echo "                                                   # all frames_per_eg frames; otherwise pad with the last frame."
   echo "  --stage <stage|0>                                # Used to run a partially-completed training process from somewhere in"
   echo "                                                   # the middle."
 
@@ -257,11 +261,11 @@ if [ $stage -le 2 ]; then
     copy-int-vector ark:- ark,scp:$dir/ali.ark,$dir/ali.scp || exit 1;
 fi
 
-egs_opts="--left-context=$left_context --right-context=$right_context --compress=$compress"
+egs_opts="--left-context=$left_context --right-context=$right_context --compress=$compress --left-shift-window=$left_shift_window"
 
 [ -z $valid_left_context ] &&  valid_left_context=$left_context;
 [ -z $valid_right_context ] &&  valid_right_context=$right_context;
-valid_egs_opts="--left-context=$valid_left_context --right-context=$valid_right_context --compress=$compress"
+valid_egs_opts="--left-context=$valid_left_context --right-context=$valid_right_context --compress=$compress --left-shift-window=$left_shift_window"
 
 echo $left_context > $dir/info/left_context
 echo $right_context > $dir/info/right_context

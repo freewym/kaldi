@@ -74,6 +74,8 @@ num_bptt_steps=    # this variable counts the number of time steps to back-propa
                    # it is usually same as chunk_width
 minibatch_chunk_size=0   # if > 0, then state preserving traning mode will be enabled,
                          # and chunk_width should be an exact multiple of it
+left_shift_window=false  # Use when creating examples. If true then left shift window for the last example to accomodate
+                         # all frames_per_eg frames; otherwise pad with the last frame.
 
 # nnet3-train options
 shrink=0.99  # this parameter would be used to scale the parameter matrices
@@ -189,6 +191,8 @@ if [ $# != 4 ]; then
   echo "  --minibatch_chunk_size <int|0>                   # if > 0 then each chunk of size chunk_width will be splitted into smaller ones of size"
   echo "                                                   # minibatch_chunk_size, and the state preserving training mode will be enabled, which preserves"
   echo "                                                   # states between minibatches. Note that if it is > 0, chunk_width should be an exact multiple of it."
+  echo "  --left-shift-window <bool|false>                 # If true then left shift window for the last example to accomodate"
+  echo "                                                   # all frames_per_eg frames; otherwise pad with the last frame."
   echo " for more options see the script"
   exit 1;
 fi
@@ -304,6 +308,7 @@ if [ $stage -le -4 ] && [ -z "$egs_dir" ]; then
   extra_opts+=(--left-context $left_context)
   extra_opts+=(--right-context $right_context)
   extra_opts+=(--valid-left-context $((chunk_width + left_context)))
+  extra_opts+=(--left-shift-window $left_shift_window)
 
   # Note: in RNNs we process sequences of labels rather than single label per sample
   echo "$0: calling get_egs.sh"
