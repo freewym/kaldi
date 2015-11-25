@@ -49,6 +49,7 @@ struct NnetGenerationOptions {
       allow_final_nonlinearity(true) { }
 };
 
+// we need to explicitly call it from nnet-utils-test.cc so we declare it here
 void GenerateConfigSequenceStatePreservingLstm(
 		const NnetGenerationOptions &opts,
 		std::vector<std::string> *configs);

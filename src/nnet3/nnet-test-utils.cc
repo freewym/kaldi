@@ -850,7 +850,7 @@ void GenerateConfigSequence(
     const NnetGenerationOptions &opts,
     std::vector<std::string> *configs) {
 start:
-  int32 network_type = RandInt(0, 8);
+  int32 network_type = RandInt(0, 9);
   switch(network_type) {
     case 0:
       GenerateConfigSequenceSimplest(opts, configs);
@@ -899,6 +899,12 @@ start:
         goto start;
       GenerateConfigSequenceCnn2d(opts, configs);
       break;
+    case 9:
+      if (!opts.allow_recursion || !opts.allow_context ||
+          !opts.allow_nonlinearity || !opts.allow_multiple_inputs)
+        goto start;
+      GenerateConfigSequenceStatePreservingLstm(opts, configs);
+      break;
 
     default:
       KALDI_ERR << "Error generating config sequence.";
@@ -909,7 +915,7 @@ void ComputeExampleComputationRequestSimple(
     const Nnet &nnet,
     ComputationRequest *request,
     std::vector<Matrix<BaseFloat> > *inputs) {
-  KALDI_ASSERT(IsSimpleNnet(nnet));
+  //KALDI_ASSERT(IsSimpleNnet(nnet));
 
   int32 left_context, right_context;
   ComputeSimpleNnetContext(nnet, &left_context, &right_context);
@@ -954,6 +960,23 @@ void ComputeExampleComputationRequestSimple(
     inputs->back().SetRandn();
     if (need_deriv && (Rand() % 2 == 0))
       request->inputs.back().has_deriv = true;
+  }
+  // add recurrent inputs in IoSpecification as specified in nnet. The reason
+  // why we didn't add recurrent outputs is that it requires modifications of
+  // existing test code to create output derivatives for each of these outputs
+  for (int32 i = 0; i < nnet.NumNodes(); i++) {
+    const std::string node_name = nnet.GetNodeName(i);
+    if (nnet.IsInputNode(i) && node_name != "input" && node_name != "ivector") {
+      std::vector<Index> indexes;
+      for (int32 n = n_offset; n < n_offset + num_examples; n++)
+        indexes.push_back(Index(n, 0, 0));
+      int32 dim = nnet.InputDim(node_name);
+      request->inputs.push_back(IoSpecification(node_name, indexes));
+      inputs->push_back(Matrix<BaseFloat>(num_examples, dim));
+      inputs->back().SetRandn();
+      if (need_deriv && (Rand() % 2 == 0))
+        request->inputs.back().has_deriv = true;
+    }
   }
   if (Rand() % 2 == 0)
     request->need_model_derivative = need_deriv;
