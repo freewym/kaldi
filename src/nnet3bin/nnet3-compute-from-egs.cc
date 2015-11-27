@@ -47,7 +47,6 @@ class NnetComputerFromEg {
         num_chunks = eg.io[f].NumChunks();
         chunk_size = eg.io[f].NumFramesPerChunk();
       }
-    KALDI_LOG << "num_chunks=" << num_chunks << " chunk_size=" << chunk_size;//debug
 
     std::vector<std::string> recurrent_output_names;
     std::vector<std::string> recurrent_node_names;
@@ -57,7 +56,6 @@ class NnetComputerFromEg {
     for (int32 i = 0; i < static_cast<int32>(recurrent_output_names.size());
          i++) {
       std::string &node_name = recurrent_output_names[i];
-      KALDI_LOG <<"node_name=" <<node_name;//debug
 
       // Add to NnetIo the recurrent connections as additional inputs
       Matrix<BaseFloat> zero_matrix_as_input = Matrix<BaseFloat>(
