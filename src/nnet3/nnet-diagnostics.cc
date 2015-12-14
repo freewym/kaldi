@@ -58,66 +58,19 @@ void NnetComputeProb::Reset() {
 }
 
 void NnetComputeProb::Compute(const NnetExample &eg) {
-  // make a copy of eg so that we can keep eg const
-  NnetExample eg_modified(eg);
-
-  int32 num_chunks = -1, chunk_size = -1;
-  for (int32 f = 0; f < static_cast<int32>(eg.io.size()); f++)
-    if (eg.io[f].name == "output") {
-      num_chunks = eg.io[f].NumChunks();
-      chunk_size = eg.io[f].NumFramesPerChunk();
-    }
-
-  std::vector<std::string> recurrent_output_names;
-  std::vector<std::string> recurrent_node_names;
-  GetRecurrentOutputNodeNames(nnet_, &recurrent_output_names,
-		              &recurrent_node_names);
-
-  for (int32 i = 0; i < static_cast<int32>(recurrent_output_names.size());
-       i++) {
-    std::string &node_name = recurrent_output_names[i];
-
-    // Add to NnetIo the recurrent connections as additional inputs
-    Matrix<BaseFloat> zero_matrix_as_input = Matrix<BaseFloat>(
-		    num_chunks, nnet_.OutputDim(node_name));
-    eg_modified.io.push_back(NnetIo(recurrent_output_names[i]
-	    + "_STATE_PREVIOUS_MINIBATCH", 0, zero_matrix_as_input));
-    // Correct the indexes: swap indexes "n" and "t" so that 
-    // n ranges from 0 to feats.NumRows() - 1 and t is always 0
-    std::vector<Index> &indexes_input = eg_modified.io.back().indexes;
-    for (int32 j = 0; j < static_cast<int32>(indexes_input.size()); j++)
-      std::swap(indexes_input[j].n, indexes_input[j].t);
-
-    // Add to NnetIo the recurrent connections in the current minibatch 
-    // as additional outputs. Actually the contents of output matrix is
-    // irrelevant; we don't need it as supervision; we only need its 
-    // NunRows info for NnetIo::indexes. So we just use zero matrix.
-    Matrix<BaseFloat> zero_matrix_as_output = Matrix<BaseFloat>(
-		    num_chunks * chunk_size, nnet_.OutputDim(node_name));
-    eg_modified.io.push_back(NnetIo(recurrent_output_names[i], 0,
-		zero_matrix_as_output));
-    // correct the indexes.
-    std::vector<Index> &indexes_output = eg_modified.io.back().indexes;
-    for (int32 n = 0, j = 0; n < num_chunks; n++)
-      for (int32 t = 0; t < chunk_size; t++, j++) {
-	indexes_output[j].n = n;
-	indexes_output[j].t = t;
-      } 
-  }
-
   bool need_model_derivative = config_.compute_deriv,
       store_component_stats = false;
   ComputationRequest request;
-  GetComputationRequest(nnet_, eg_modified, need_model_derivative,
+  GetComputationRequest(nnet_, eg, need_model_derivative,
                         store_component_stats,
                         &request);
   const NnetComputation *computation = compiler_.Compile(request);
   NnetComputer computer(config_.compute_config, *computation,
                         nnet_, deriv_nnet_);
   // give the inputs to the computer object.
-  computer.AcceptInputs(nnet_, eg_modified.io);
+  computer.AcceptInputs(nnet_, eg.io);
   computer.Forward();
-  this->ProcessOutputs(eg_modified, &computer);
+  this->ProcessOutputs(eg, &computer);
   if (config_.compute_deriv)
     computer.Backward();
 }

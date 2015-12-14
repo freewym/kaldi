@@ -110,17 +110,17 @@ static void ProcessFile(const MatrixBase<BaseFloat> &feats,
 }
 
 static void ProcessFile2(const MatrixBase<BaseFloat> &feats,
-                        const MatrixBase<BaseFloat> *ivector_feats,
-                        const Posterior &pdf_post,
-                        const std::string &utt_id,
-                        bool compress,
-                        int32 num_pdfs,
-                        int32 left_context,
-                        int32 right_context,
-                        int32 frames_per_eg,
-                        int64 *num_frames_written,
-                        int64 *num_egs_written,
-                        NnetExampleWriter *example_writer) {
+                         const MatrixBase<BaseFloat> *ivector_feats,
+                         const Posterior &pdf_post,
+                         const std::string &utt_id,
+                         bool compress,
+                         int32 num_pdfs,
+                         int32 left_context,
+                         int32 right_context,
+                         int32 frames_per_eg,
+                         int64 *num_frames_written,
+                         int64 *num_egs_written,
+                         NnetExampleWriter *example_writer) {
   KALDI_ASSERT(feats.NumRows() == static_cast<int32>(pdf_post.size()));
   
   for (int32 t = 0; t < feats.NumRows(); t += frames_per_eg) {
@@ -303,14 +303,14 @@ int main(int argc, char *argv[]) {
           continue;
         }
         
-	if(!left_shift_window)   
+        if(!left_shift_window)   
           ProcessFile(feats, ivector_feats, pdf_post, key, compress,
                       num_pdfs, left_context, right_context, num_frames,
                       &num_frames_written, &num_egs_written,
                       &example_writer);
-	else
-	  ProcessFile2(feats, ivector_feats, pdf_post, key, compress,
-		       num_pdfs, left_context, right_context, num_frames,
+        else
+          ProcessFile2(feats, ivector_feats, pdf_post, key, compress,
+                       num_pdfs, left_context, right_context, num_frames,
                        &num_frames_written, &num_egs_written,
                        &example_writer);
 

@@ -702,10 +702,10 @@ void GenerateConfigSequenceStatePreservingLstm(
   std::string spliced_input = temp_string_stream.str();
 
   std::string c_tminus1 = "Sum(" 
-	  "Failover(Offset(c1_t, -1), "
-	  "ReplaceIndex(output_c1_t_STATE_PREVIOUS_MINIBATCH, t, 0)), "
-	  "Failover(Offset(c2_t, -1), "
-	  "ReplaceIndex(output_c2_t_STATE_PREVIOUS_MINIBATCH, t, 0)))";
+          "Failover(Offset(c1_t, -1), "
+          "ReplaceIndex(output_c1_t_STATE_PREVIOUS_MINIBATCH, t, 0)), "
+          "Failover(Offset(c2_t, -1), "
+          "ReplaceIndex(output_c2_t_STATE_PREVIOUS_MINIBATCH, t, 0)))";
 
   // i_t
   os << "component-node name=i1 component=Wi-xr input=Append("

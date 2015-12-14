@@ -36,7 +36,6 @@ struct NnetTrainerOptions {
   bool debug_computation;
   BaseFloat momentum;
   BaseFloat max_param_change;
-  int32 minibatch_chunk_size;
   NnetOptimizeOptions optimize_config;
   NnetComputeOptions compute_config;
   NnetTrainerOptions():
@@ -45,8 +44,7 @@ struct NnetTrainerOptions {
       print_interval(100),
       debug_computation(false),
       momentum(0.0),
-      max_param_change(2.0), 
-      minibatch_chunk_size(0) { }
+      max_param_change(2.0) { }
   void Register(OptionsItf *opts) {
     opts->Register("store-component-stats", &store_component_stats,
                    "If true, store activations and derivatives for nonlinear "
@@ -66,9 +64,6 @@ struct NnetTrainerOptions {
                    "so that the 'effective' learning rate is the same as "
                    "before (because momentum would normally increase the "
                    "effective learning rate by 1/(1-momentum))");
-    opts->Register("minibatch-chunk-size", &minibatch_chunk_size,
-		   "used for enabling state preserving LSTM. default 0 indicates "
-		   "no state preserving");
 
     // register the optimization options with the prefix "optimization".
     ParseOptions optimization_opts("optimization", opts);
@@ -115,6 +110,17 @@ struct ObjectiveFunctionInfo {
   bool PrintTotalStats(const std::string &output_name) const;
 };
 
+// This struct is used in state preserving LSTM traing mode for passing
+// some necessary info into NnetTrainer
+struct StatePreservingInfo {
+  std::vector<std::string> recurrent_output_names;
+  std::vector<int32> recurrent_offsets;
+
+  StatePreservingInfo() {
+    recurrent_output_names.clear();
+    recurrent_offsets.clear();
+  }
+};
 
 /** This class is for single-threaded training of neural nets using
     standard objective functions such as cross-entropy (implemented with
@@ -136,6 +142,14 @@ class NnetTrainer {
   // train on one minibatch.
   void Train(const NnetExample &eg);
 
+  // give some necessary info for state-preserving training
+  void GiveStatePreservingInfo(const std::vector<std::string>
+                               recurrent_output_names,
+                               const std::vector<int32> recurrent_offsets);
+  
+  // get recurrent outputs
+  std::vector<Matrix<BaseFloat> > GetRecurrentOutputs() const;
+
   // Prints out the final stats, and return true if there was a nonzero count.
   bool PrintTotalStats() const;
 
@@ -144,15 +158,15 @@ class NnetTrainer {
   void ProcessOutputs(const NnetExample &eg,
                       NnetComputer *computer);
 
-  // Update output matrix in current_outputs of all the recurrent connections
-  // from the previous minibatch. The output matrix only includes the recurrent
-  // output of the last [offset] frame of each chunk in the previous minibatch. 
-  void GetRecurrentOutputs(int32 chunk_size,
-		           int32 num_chunks,
-		           NnetComputer &computer,
-			   std::vector<std::string> &recurrent_output_names,
-			   std::vector<int32> &recurrent_offsets,
-		           std::vector<Matrix<BaseFloat> > *recurrent_outputs);
+  // Update output matrix in current_outputs_ of all the recurrent connections
+  // of the current minibatch for the next minibatch. The output matrix only
+  // includes the recurrent output of the last [offset] frame of each chunk of
+  // the current minibatch. 
+  void UpdateRecurrentOutputs(const NnetExample &eg,
+                              const NnetComputer &computer,
+                              const std::vector<std::string>
+                              &recurrent_output_names,
+                              const std::vector<int32> &recurrent_offsets);
 
   const NnetTrainerOptions config_;
   Nnet *nnet_;
@@ -172,6 +186,12 @@ class NnetTrainer {
   // flag of state preserving training mode. 
   // default: false. It will be set true if minibatch_chunk_size > 0
   bool state_preserving_training_;
+
+  StatePreservingInfo state_preserving_info_; 
+
+  // In the state presrving training mode needed as inputs to the next minibatch
+  // It is a vector container storing the recurrent outputs of each chunk
+  std::vector<Matrix<BaseFloat> > recurrent_outputs_;
 };
 
 /**

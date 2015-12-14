@@ -665,15 +665,15 @@ void Nnet::Check() const {
     const NetworkNode &node = nodes_[n];
     std::string node_name = node_names_[n];
     KALDI_ASSERT(GetNodeIndex(node_name) == n);
-    int32 node_index_reserved = GetNodeIndex(node_name + 
-		                             "_STATE_PREVIOUS_MINIBATCH");
+    int32 node_index_reserved = GetNodeIndex(node_name +
+                                             "_STATE_PREVIOUS_MINIBATCH");
     if (node_index_reserved != -1 && 
         (!IsInputNode(node_index_reserved) || !IsOutputNode(n) ||
-	node_name == "output"))
+      node_name == "output"))
       KALDI_ERR << " The name \"" << node_name << "\" with suffix \""
-	        << "_STATE_PREVIOUS_MINIBATCH\" is reserved only for input "
-	        << "node, and in this case \"" << node_name 
-	        << "\" should be an output node name other than \"output\"";
+                << "_STATE_PREVIOUS_MINIBATCH\" is reserved only for input "
+                << "node, and in this case \"" << node_name 
+                << "\" should be an output node name other than \"output\"";
     switch (node.node_type) {
       case kInput:
         KALDI_ASSERT(node.dim > 0);
@@ -682,12 +682,12 @@ void Nnet::Check() const {
       case kDescriptor: {
         if (IsOutputNode(n)) {
           num_output_nodes++;
-	  if (node_name != "output" && (node_index_reserved == -1 || 
-	      !IsInputNode(node_index_reserved)))
-	    KALDI_ERR << "The output node \"" << node_name <<"\" should "
-		      << "have its name with suffix "
+          if (node_name != "output" && (node_index_reserved == -1 || 
+              !IsInputNode(node_index_reserved)))
+            KALDI_ERR << "The output node \"" << node_name <<"\" should "
+                      << "have its name with suffix "
                       << "\"_STATE_PREVIOUS_MINIBATCH\"only for an input node.";
-	}
+        }
         std::vector<int32> node_deps;
         node.descriptor.GetNodeDependencies(&node_deps);
         SortAndUniq(&node_deps);

@@ -63,7 +63,22 @@ void GetComputationRequest(const Nnet &nnet,
                            bool store_component_stats,
                            ComputationRequest *computation_request);
 
+/** num frames per chunk, count num of distinct "t" values for all indexes 
+    whose "n" value is 0. Note that all chunks have the same num of frames
+    by construction
+*/
+int32 NumFramesPerChunk(const NnetIo &io);
 
+/** num of chunks in the minibatch case. just find the largest "n" value
+*/
+int32 NumChunks(const NnetIo &io);
+
+/** For each original large chunk in a minibatch, Split it into smaller ones,
+    which is of size new_chunk_size. It will end up generate
+    (chunk_size / new_chunk_size) new minibatches
+*/
+void SplitChunk(int32 new_chunk_size, int32 left_context, int32 right_context,
+                const NnetExample &eg, std::vector<NnetExample> *splitted);
 
 } // namespace nnet3
 } // namespace kaldi

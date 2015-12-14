@@ -63,14 +63,6 @@ struct NnetIo {
          const Posterior &labels);
   
   NnetIo() { }
-
-  /// num frames per chunk, count num of distinct "t" values for all indexes 
-  /// whose "n" value is 0. Note that all chunks have the same num of frames
-  /// by construction
-  int32 NumFramesPerChunk() const;
-
-  /// num of chunks in the minibatch case. just find the largest "n" value
-  int32 NumChunks() const;
   
   // Use default copy constructor and assignment operators.
   void Write(std::ostream &os, bool binary) const;
@@ -98,14 +90,6 @@ struct NnetExample {
   NnetExample(const NnetExample &other): io(other.io) { }
 
   void Swap(NnetExample *other) { io.swap(other->io); }
-
-  /// For each chunk in a minibatch, Split the original chunk into smaller ones,
-  /// each of which is of size new_chunk_size, to generate new minibatches
-  void SplitChunk(int32 new_chunk_size,
-		  int32 left_context,
-		  int32 right_context,
-	          int32 *ptr_num_chunks,
-	          std::vector<NnetExample> *splitted) const;
 
   /// Compresses any features that are not sparse.
   void Compress();

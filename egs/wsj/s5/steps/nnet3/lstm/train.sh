@@ -72,8 +72,8 @@ lstm_delay=" -1 -2 -3 "  # the delay to be used in the recurrence of lstms
                          # delays -1, -2 and -3 at layer1 lstm, layer2 lstm and layer3 lstm respectively
 num_bptt_steps=    # this variable counts the number of time steps to back-propagate from the last label in the chunk
                    # it is usually same as chunk_width
-minibatch_chunk_size=0   # if > 0, then state preserving traning mode will be enabled,
-                         # and chunk_width should be an exact multiple of it
+minibatch_chunk_size=$chunk_width  # if 0 < minibatch_chunk_size < chunk_width && chunk_width is an exact multiple of minibatch_chunk_size,
+                                   # then state preserving traning mode will be enabled,
 left_shift_window=false  # Use when creating examples. If true then left shift window for the last example to accomodate
                          # all frames_per_eg frames; otherwise pad with the last frame.
 
@@ -188,9 +188,9 @@ if [ $# != 4 ]; then
   echo "  --shrink <shrink|0.99>                           # if non-zero this parameter will be used to scale the parameter matrices"
   echo "  --shrink-threshold <threshold|0.15>             # a threshold (should be between 0.0 and 0.25) that controls when to"
   echo "                                                   # do parameter shrinking."
-  echo "  --minibatch_chunk_size <int|0>                   # if > 0 then each chunk of size chunk_width will be splitted into smaller ones of size"
+  echo "  --minibatch_chunk_size <int|0>                   # if > 0 && < chunk_width then each chunk of size chunk_width will be splitted into smaller ones of size"
   echo "                                                   # minibatch_chunk_size, and the state preserving training mode will be enabled, which preserves"
-  echo "                                                   # states between minibatches. Note that if it is > 0, chunk_width should be an exact multiple of it."
+  echo "                                                   # states between minibatches. Note: if it is the case, chunk_width should be an exact multiple of it."
   echo "  --left-shift-window <bool|false>                 # If true then left shift window for the last example to accomodate"
   echo "                                                   # all frames_per_eg frames; otherwise pad with the last frame."
   echo " for more options see the script"
@@ -257,7 +257,7 @@ if [ $stage -le -5 ]; then
   config_extra_opts=()
   [ ! -z "$lstm_delay" ] && config_extra_opts+=(--lstm-delay "$lstm_delay")
 
-  if [ $minibatch_chunk_size -gt 0 ]; then
+  if [ $minibatch_chunk_size -gt 0 ] && [ $minibatch_chunk_size -lt $chunk_width ]; then
     state_preserving=true
     [ $[$chunk_width%$minibatch_chunk_size] -ne 0 ] && echo "$0: Error chunk_width is not a multiple of minibatch_chunk_size." && exit 1;
   else
@@ -517,6 +517,7 @@ while [ $x -lt $num_iters ]; do
         nnet3-copy-egs --srand=JOB --frame=random $context_opts ark:$prev_egs_dir/egs.1.ark ark:- \| \
         nnet3-subset-egs --srand=JOB --n=$prior_subset_size ark:- ark:- \| \
         nnet3-merge-egs ark:- ark:- \| \
+        nnet3-add-recurrent-io-to-egs "nnet3-am-copy --raw=true $dir/$x.mdl - |" ark:- ark:- \| \
         nnet3-compute-from-egs --apply-exp=true "nnet3-am-copy --raw=true $dir/$x.mdl -|" ark:- ark:- \| \
         matrix-sum-rows ark:- ark:- \| vector-sum ark:- $dir/post.$x.JOB.vec || exit 1;
 
@@ -548,16 +549,16 @@ while [ $x -lt $num_iters ]; do
     # Use the egs dir from the previous iteration for the diagnostics
     $cmd $dir/log/compute_prob_valid.$x.log \
       nnet3-compute-prob "nnet3-am-copy --raw=true $dir/$x.mdl - |" \
-            "ark:nnet3-merge-egs ark:$cur_egs_dir/valid_diagnostic.egs ark:- |" &
+            "ark:nnet3-merge-egs ark:$cur_egs_dir/valid_diagnostic.egs ark:- | nnet3-add-recurrent-io-to-egs \"nnet3-am-copy --raw=true $dir/$x.mdl - |\" ark:- ark:- |" &
     $cmd $dir/log/compute_prob_train.$x.log \
       nnet3-compute-prob "nnet3-am-copy --raw=true $dir/$x.mdl - |" \
-           "ark:nnet3-merge-egs ark:$cur_egs_dir/train_diagnostic.egs ark:- |" &
+           "ark:nnet3-merge-egs ark:$cur_egs_dir/train_diagnostic.egs ark:- | nnet3-add-recurrent-io-to-egs \"nnet3-am-copy --raw=true $dir/$x.mdl - |\" ark:- ark:- |" &
 
     if [ $x -gt 0 ]; then
       $cmd $dir/log/progress.$x.log \
         nnet3-info "nnet3-am-copy --raw=true $dir/$x.mdl - |" '&&' \
         nnet3-show-progress --use-gpu=no "nnet3-am-copy --raw=true $dir/$[$x-1].mdl - |" "nnet3-am-copy --raw=true $dir/$x.mdl - |" \
-        "ark:nnet3-merge-egs --minibatch-size=256 ark:$cur_egs_dir/train_diagnostic.egs ark:-|" &
+        "ark:nnet3-merge-egs --minibatch-size=256 ark:$cur_egs_dir/train_diagnostic.egs ark:-| nnet3-add-recurrent-io-to-egs \"nnet3-am-copy --raw=true $dir/$x.mdl - |\" ark:- ark:- |" &
     fi
 
     echo "Training neural net (pass $x)"
@@ -607,8 +608,8 @@ while [ $x -lt $num_iters ]; do
           nnet3-train $parallel_train_opts --print-interval=10 --momentum=$momentum \
           --max-param-change=$max_param_change \
           --optimization.min-deriv-time=$min_deriv_time \
-	  --minibatch-chunk-size=$minibatch_chunk_size "$raw" \
-          "ark:nnet3-copy-egs $context_opts ark:$cur_egs_dir/egs.$archive.ark ark:- | nnet3-shuffle-egs --buffer-size=$shuffle_buffer_size --srand=$x ark:- ark:-| nnet3-merge-egs --minibatch-size=$this_num_chunk_per_minibatch --measure-output-frames=false --discard-partial-minibatches=true ark:- ark:- |" \
+          --num-splits-per-chunk=$[$chunk_width/$minibatch_chunk_size] "$raw" \
+          "ark:nnet3-copy-egs $context_opts ark:$cur_egs_dir/egs.$archive.ark ark:- | nnet3-shuffle-egs --buffer-size=$shuffle_buffer_size --srand=$x ark:- ark:-| nnet3-merge-egs --minibatch-size=$this_num_chunk_per_minibatch --measure-output-frames=false --discard-partial-minibatches=true ark:- ark:- | nnet3-split-egs --chunk-size-after-split=$minibatch_chunk_size \"$raw\" ark:- ark:- | nnet3-add-recurrent-io-to-egs \"$raw\" ark:- ark:- |" \
           $dir/$[$x+1].$n.raw || touch $dir/.error &
       done
       wait
@@ -679,7 +680,7 @@ if [ $stage -le $num_iters ]; then
   $cmd $combine_queue_opt $dir/log/combine.log \
     nnet3-combine --num-iters=40 \
        --enforce-sum-to-one=true --enforce-positive-weights=true \
-       --verbose=3 "${nnets_list[@]}" "ark:nnet3-merge-egs --measure-output-frames=false --minibatch-size=$combine_num_chunk_per_minibatch ark:$cur_egs_dir/combine.egs ark:-|" \
+       --verbose=3 "${nnets_list[@]}" "ark:nnet3-merge-egs --measure-output-frames=false --minibatch-size=$combine_num_chunk_per_minibatch ark:$cur_egs_dir/combine.egs ark:-| nnet3-add-recurrent-io-to-egs \"nnet3-am-copy --raw=true $dir/$num_iters.mdl - |\" ark:- ark:- |" \
     "|nnet3-am-copy --set-raw-nnet=- $dir/$num_iters.mdl $dir/combined.mdl" || exit 1;
 
   # Compute the probability of the final, combined model with
@@ -687,10 +688,10 @@ if [ $stage -le $num_iters ]; then
   # different subsets will lead to different probs.
   $cmd $dir/log/compute_prob_valid.final.log \
     nnet3-compute-prob "nnet3-am-copy --raw=true $dir/combined.mdl -|" \
-    "ark:nnet3-merge-egs --minibatch-size=256 ark:$cur_egs_dir/valid_diagnostic.egs ark:- |" &
+    "ark:nnet3-merge-egs --minibatch-size=256 ark:$cur_egs_dir/valid_diagnostic.egs ark:- | nnet3-add-recurrent-io-to-egs \"nnet3-am-copy --raw=true $dir/combined.mdl - |\" ark:- ark:- |" &
   $cmd $dir/log/compute_prob_train.final.log \
     nnet3-compute-prob  "nnet3-am-copy --raw=true $dir/combined.mdl -|" \
-    "ark:nnet3-merge-egs --minibatch-size=256 ark:$cur_egs_dir/train_diagnostic.egs ark:- |" &
+    "ark:nnet3-merge-egs --minibatch-size=256 ark:$cur_egs_dir/train_diagnostic.egs ark:- | nnet3-add-recurrent-io-to-egs \"nnet3-am-copy --raw=true $dir/combined.mdl - |\" ark:- ark:- |" &
 fi
 
 if [ $stage -le $[$num_iters+1] ]; then
@@ -703,6 +704,7 @@ if [ $stage -le $[$num_iters+1] ]; then
     nnet3-copy-egs --frame=random $context_opts --srand=JOB ark:$cur_egs_dir/egs.$egs_part.ark ark:- \| \
     nnet3-subset-egs --srand=JOB --n=$prior_subset_size ark:- ark:- \| \
     nnet3-merge-egs ark:- ark:- \| \
+    nnet3-add-recurrent-io-to-egs "nnet3-am-copy --raw=true $dir/combined.mdl - |" ark:- ark:- \| \
     nnet3-compute-from-egs $prior_gpu_opt --apply-exp=true \
       "nnet3-am-copy --raw=true $dir/combined.mdl -|" ark:- ark:- \| \
     matrix-sum-rows ark:- ark:- \| vector-sum ark:- $dir/post.$x.JOB.vec || exit 1;

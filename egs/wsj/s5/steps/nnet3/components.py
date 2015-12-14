@@ -29,10 +29,10 @@ def AddRecurrentInputNodes(config_lines, name, cell_dim = 0, recurrent_projectio
     components_nodes = config_lines['component-nodes']
     if cell_dim > 0:
         components.append('input-node name=output_{0}_c_t_STATE_PREVIOUS_MINIBATCH dim='.format(name) + str(cell_dim))
-	if recurrent_projection_dim > 0:
-	    components.append('input-node name=output_{0}_r_t_STATE_PREVIOUS_MINIBATCH dim='.format(name) + str(recurrent_projection_dim))
-	else:
-	    components.append('input-node name=output_{0}_m_t_STATE_PREVIOUS_MINIBATCh dim='.format(name) + str(cell_dim))
+    if recurrent_projection_dim > 0:
+        components.append('input-node name=output_{0}_r_t_STATE_PREVIOUS_MINIBATCH dim='.format(name) + str(recurrent_projection_dim))
+    else:
+        components.append('input-node name=output_{0}_m_t_STATE_PREVIOUS_MINIBATCh dim='.format(name) + str(cell_dim))
 
 def AddLdaLayer(config_lines, name, input, lda_file):
     components = config_lines['components']
@@ -103,7 +103,7 @@ def AddRecurrentOutputNodes(config_lines, name, label_delay=None, recurrent_proj
     if label_delay is None:
         component_nodes.append('output-node name=output_{0}_{1} input={0}_{1}'.format(name, recurrent_connection))
     else:
-	component_nodes.append('output-node name=output_{0}_{1} input=Offset({0}_{1},{2})'.format(name, recurrent_connection, label_delay))
+        component_nodes.append('output-node name=output_{0}_{1} input=Offset({0}_{1},{2})'.format(name, recurrent_connection, label_delay))
 
 def AddFinalLayer(config_lines, input, output_dim, ng_affine_options = "", label_delay=None):
     prev_layer_output = AddAffineLayer(config_lines, "Final", input, output_dim, ng_affine_options)

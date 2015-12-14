@@ -108,60 +108,61 @@ void UnitTestNnetSplitExampleBySplitChunkInExample() {
                                 ivector_dim = RandInt(-1, 2);
     NnetExample eg;
     GenerateSimpleNnetTrainingExample(num_supervised_frames_before_split,
-		                      left_context, right_context,
-				      input_dim, output_dim,
-				      RandInt(0, 1) == 0 ? 0 : ivector_dim,
+                                      left_context, right_context,
+                                      input_dim, output_dim,
+                                      RandInt(0, 1) == 0 ? 0 : ivector_dim,
                                       &eg);
-    KALDI_LOG << n << "'th example to be splitted is: ";
+    KALDI_LOG << n << "'th example (left_context=" << left_context
+              << ", right_context=" << right_context << ", chunk_size="
+              << num_supervised_frames_before_split << ") to be splitted is: ";
     eg.Write(std::cerr, false);
-    int32 num_chunks = -1;
     std::vector<NnetExample> egs_splitted;
-    eg.SplitChunk(num_supervised_frames_after_split,
-		  left_context, right_context, &num_chunks, &egs_splitted);
+    SplitChunk(num_supervised_frames_after_split, left_context, right_context,
+               eg, &egs_splitted);
     // test if num of splitted examples agree
     KALDI_ASSERT(egs_splitted.size() == num_examples_after_split);
 
     int32 num_input_frames = num_supervised_frames_after_split
-	                       + left_context + right_context;
-    KALDI_LOG << num_examples_after_split << " splitted examples are: ";
+                             + left_context + right_context;
+    KALDI_LOG << num_examples_after_split << " splitted examples(chunk_size="
+              << num_supervised_frames_after_split << ") are: ";
     for (int32 f = 0; f < static_cast<int32>(eg.io.size()); f++) {
       Matrix<BaseFloat> feat;
       eg.io[f].features.GetMatrix(&feat);
       for (int32 i = 0; i < static_cast<int32>(egs_splitted.size()); i++) {
         if (f == 0) {
-	  KALDI_LOG << i << "'th:";
-	  egs_splitted[i].Write(std::cerr, false);
-	  KALDI_LOG << "";
-	}
-	const std::vector<NnetIo> &io = egs_splitted[i].io;
-	// test if the number of data and indexes in a splitted example agree
+          KALDI_LOG << i << "'th:";
+          egs_splitted[i].Write(std::cerr, false);
+          KALDI_LOG << "\n";
+        }
+        const std::vector<NnetIo> &io = egs_splitted[i].io;
+        // test if the number of data and indexes in a splitted example agree
         KALDI_ASSERT(io[f].features.NumRows() == io[f].indexes.size());
-	// test if io names unchanged after split
-	KALDI_ASSERT(io[f].name == eg.io[f].name);
+        // test if io names unchanged after split
+        KALDI_ASSERT(io[f].name == eg.io[f].name);
 
-	int32 row_offset = -1, num_rows = -1;
-	if (io[f].name == "input") {
-	  row_offset = i * num_supervised_frames_after_split;
-	  num_rows = num_input_frames;
-	  // test if the start of indexes "t" is unchanged after split
-	  KALDI_ASSERT(io[f].indexes.begin()->t == eg.io[f].indexes.begin()->t);
-	} else if (io[f].name == "output") {
-	  row_offset = i * num_supervised_frames_after_split;
-	  num_rows = num_supervised_frames_after_split;
-	  KALDI_ASSERT(io[f].indexes.begin()->t == eg.io[f].indexes.begin()->t);
-
-	} else if (io[f].name == "ivector") {
-	  row_offset = 0;
-	  num_rows = 1;
-	  // test if indexes are unchanged after split
-	  KALDI_ASSERT(io[f].indexes == eg.io[f].indexes);
-	}
-	SubMatrix<BaseFloat> feat_sub = feat.RowRange(row_offset, num_rows);
-	Matrix<BaseFloat> feat_splitted;
-	io[f].features.GetMatrix(&feat_splitted);
-	// test if the data matrices are correctly splitted
-	KALDI_ASSERT(ApproxEqual(feat_sub, feat_splitted,
-				 static_cast<BaseFloat>(0.001)));
+        int32 row_offset = -1, num_rows = -1;
+        if (io[f].name == "input") {
+          row_offset = i * num_supervised_frames_after_split;
+          num_rows = num_input_frames;
+          // test if the start of indexes "t" is unchanged after split
+          KALDI_ASSERT(io[f].indexes.begin()->t == eg.io[f].indexes.begin()->t);
+        } else if (io[f].name == "output") {
+        row_offset = i * num_supervised_frames_after_split;
+        num_rows = num_supervised_frames_after_split;
+        KALDI_ASSERT(io[f].indexes.begin()->t == eg.io[f].indexes.begin()->t);
+        } else if (io[f].name == "ivector") {
+          row_offset = 0;
+          num_rows = 1;
+          // test if indexes are unchanged after split
+          KALDI_ASSERT(io[f].indexes == eg.io[f].indexes);
+        }
+        SubMatrix<BaseFloat> feat_sub = feat.RowRange(row_offset, num_rows);
+        Matrix<BaseFloat> feat_splitted;
+        io[f].features.GetMatrix(&feat_splitted);
+        // test if the data matrices are correctly splitted
+        KALDI_ASSERT(ApproxEqual(feat_sub, feat_splitted,
+                                 static_cast<BaseFloat>(0.0001)));
       }
     } 
   }
