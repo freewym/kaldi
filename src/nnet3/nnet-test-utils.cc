@@ -703,14 +703,14 @@ void GenerateConfigSequenceStatePreservingLstm(
 
   std::string c_tminus1 = "Sum(" 
           "Failover(Offset(c1_t, -1), "
-          "ReplaceIndex(output_c1_t_STATE_PREVIOUS_MINIBATCH, t, 0)), "
+          "Offset(output_c1_t_STATE_PREVIOUS_MINIBATCH, -1)), "
           "Failover(Offset(c2_t, -1), "
-          "ReplaceIndex(output_c2_t_STATE_PREVIOUS_MINIBATCH, t, 0)))";
+          "Offset(output_c2_t_STATE_PREVIOUS_MINIBATCH, -1)))";
 
   // i_t
   os << "component-node name=i1 component=Wi-xr input=Append("
      << spliced_input << ", Failover(Offset(r_t, -1), "
-     << "ReplaceIndex(output_r_t_STATE_PREVIOUS_MINIBATCH, t, 0)))\n";
+     << "Offset(output_r_t_STATE_PREVIOUS_MINIBATCH, -1)))\n";
   os << "component-node name=i2 component=Wic "
      << " input=" << c_tminus1 << std::endl;
   os << "component-node name=i_t component=i input=Sum(i1, i2)\n";
@@ -718,7 +718,7 @@ void GenerateConfigSequenceStatePreservingLstm(
   // f_t
   os << "component-node name=f1 component=Wf-xr input=Append("
      << spliced_input << ", Failover(Offset(r_t, -1), "
-     << "ReplaceIndex(output_r_t_STATE_PREVIOUS_MINIBATCH, t, 0)))\n";
+     << "Offset(output_r_t_STATE_PREVIOUS_MINIBATCH, -1)))\n";
   os << "component-node name=f2 component=Wfc "
      << " input=" << c_tminus1 << std::endl;
   os << "component-node name=f_t component=f input=Sum(f1, f2)\n";
@@ -726,7 +726,7 @@ void GenerateConfigSequenceStatePreservingLstm(
   // o_t
   os << "component-node name=o1 component=Wo-xr input=Append("
      << spliced_input << ", Failover(Offset(r_t, -1), "
-     << "ReplaceIndex(output_r_t_STATE_PREVIOUS_MINIBATCH, t, 0)))\n";
+     << "Offset(output_r_t_STATE_PREVIOUS_MINIBATCH, -1)))\n";
   os << "component-node name=o2 component=Woc input=Sum(c1_t, c2_t)\n";
   os << "component-node name=o_t component=o input=Sum(o1, o2)\n";
 
@@ -736,7 +736,7 @@ void GenerateConfigSequenceStatePreservingLstm(
   // g_t
   os << "component-node name=g1 component=Wc-xr input=Append("
      << spliced_input << ", Failover(Offset(r_t, -1), "
-     << "ReplaceIndex(output_r_t_STATE_PREVIOUS_MINIBATCH, t, 0)))\n";
+     << "Offset(output_r_t_STATE_PREVIOUS_MINIBATCH, -1)))\n";
   os << "component-node name=g_t component=g input=g1\n";
 
   // parts of c_t

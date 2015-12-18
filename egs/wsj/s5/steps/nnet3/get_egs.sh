@@ -56,7 +56,7 @@ cmvn_opts=  # can be used for specifying CMVN options, if feature type is not ld
             # it doesn't make sense to use different options than were used as input to the
             # LDA transform).  This is used to turn off CMVN in the online-nnet experiments.
 left_shift_window=false  # If true then left shift window for the last example to accomodate
-                        # all frames_per_eg frames; otherwise pad with the last frame.
+                         # all frames_per_eg frames; otherwise pad with the last frame.
 
 echo "$0 $@"  # Print the command line for logging
 

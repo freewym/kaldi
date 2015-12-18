@@ -153,13 +153,21 @@ void NnetTrainer::UpdateRecurrentOutputs(const NnetExample &eg,
     KALDI_ASSERT(r_cuda_all.NumRows() == num_chunks * chunk_size);
 
     // only copy the rows corresponding to the recurrent output of the
-    // last offset-th frame of each chunk in the previous minibatch
-    std::vector<int32> indexes(num_chunks);
+    // last (if offset < 0) or first (if offset > 0) abs(offset) frames 
+    // of each chunk from the previous minibatch
+    const int32 offset = *iter2;
+    KALDI_ASSERT(offset != 0);
+    std::vector<int32> indexes(num_chunks * abs(offset));
     for (int32 i = 0; i < num_chunks; i++)
-      indexes[i] = i * chunk_size + chunk_size + (*iter2);
+      for (int32 j = 0; j < abs(offset); j++)
+        if (offset < 0)
+          indexes[i * abs(offset) + j] = (i + 1) * chunk_size + (offset + j);
+        else
+          indexes[i * abs(offset) + j] = i * chunk_size + j;
+
     CuArray<int32> indexes_cuda(indexes);
 
-    CuMatrix<BaseFloat> r_cuda(num_chunks, r_cuda_all.NumCols());
+    CuMatrix<BaseFloat> r_cuda(num_chunks * abs(offset), r_cuda_all.NumCols());
     r_cuda.CopyRows(r_cuda_all, indexes_cuda);
 
     // update recurrent output matrix

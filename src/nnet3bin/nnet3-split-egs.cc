@@ -51,7 +51,6 @@ int main(int argc, char *argv[]) {
     NnetExampleWriter example_writer(examples_wspecifier);
 
     int32 left_context = 0, right_context = 0;
-    KALDI_ASSERT(!example_reader.Done());
     ComputeSimpleNnetContext(nnet, &left_context, &right_context);
     KALDI_LOG << "model left_context=" << left_context
               << ", model right_context=" << right_context;
@@ -77,7 +76,7 @@ int main(int argc, char *argv[]) {
       }
       splitted_examples.clear();
     }
-    KALDI_LOG << "Splitted " << num_read << "egs to " << num_written << "."; 
+    KALDI_LOG << "Splitted " << num_read << " egs to " << num_written << "."; 
     return (num_written != 0 ? 0 : 1);
   } catch(const std::exception &e) {
     std::cerr << e.what() << '\n';

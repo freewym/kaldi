@@ -217,9 +217,9 @@ int32 NumChunks(const NnetIo &io) {
 void SplitChunk(int32 new_chunk_size, int32 left_context, int32 right_context,
                 const NnetExample &eg, std::vector<NnetExample> *splitted) {
   KALDI_ASSERT(new_chunk_size > 0);
-  int32 old_chunk_size = -1, num_chunks = -1, num_input_frames_per_chunk = -1,
-        num_minibatches = -1, extra_left_frames = -1, extra_right_frames = -1,
-        output_t_begin = -1;
+  int32 old_chunk_size = 0, num_chunks = 0, num_input_frames_per_chunk = 0,
+        num_minibatches = 0, extra_left_frames = 0, extra_right_frames = 0,
+        output_t_begin = 0;
 
   for (int32 f = 0; f < static_cast<int32>(eg.io.size()); f++)
     if (eg.io[f].name == "output") {
@@ -230,21 +230,23 @@ void SplitChunk(int32 new_chunk_size, int32 left_context, int32 right_context,
       KALDI_ASSERT(old_chunk_size % new_chunk_size == 0);
       num_minibatches = old_chunk_size / new_chunk_size;
       output_t_begin = eg.io[f].indexes.begin()->t;
+      break;
     }
   for (int32 f = 0; f < static_cast<int32>(eg.io.size()); f++) 
     if (eg.io[f].name == "input") {
       // compute num of input frames per chunk
       num_input_frames_per_chunk = NumFramesPerChunk(eg.io[f]);
       // compute extra left frames and extra right frames
-      extra_left_frames = output_t_begin - eg.io[f].indexes.begin()->t
-                          - left_context;
-      extra_right_frames = num_input_frames_per_chunk - old_chunk_size
-                          - left_context - right_context - extra_left_frames;
+      extra_left_frames = output_t_begin - eg.io[f].indexes.begin()->t -
+                          left_context;
+      extra_right_frames = num_input_frames_per_chunk - old_chunk_size -
+                           left_context - right_context - extra_left_frames;
       KALDI_LOG << "extra_left_context=" << extra_left_frames 
                 << ", extra_right_context=" << extra_right_frames;
+      break;
     }
 
-  KALDI_LOG << "Will split an example into " << num_minibatches
+  KALDI_LOG << "Splitting an example into " << num_minibatches
             << " minibatches.";
   splitted->clear();
   splitted->resize(num_minibatches);

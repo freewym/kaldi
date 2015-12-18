@@ -17,7 +17,7 @@ def PrintConfig(file_name, config_lines):
     f.write("\n".join(config_lines['component-nodes'])+"\n")
     f.close()
 
-def ParseSpliceString(splice_indexes, label_delay=None):
+def ParseSpliceString(splice_indexes, label_delay=None, state_preserving="false"):
     ## Work out splice_array e.g. splice_array = [ [ -3,-2,...3 ], [0], [-2,2], .. [ -8,8 ] ]
     split1 = splice_indexes.split(" ");  # we already checked the string is nonempty.
     if len(split1) < 1:
@@ -26,7 +26,8 @@ def ParseSpliceString(splice_indexes, label_delay=None):
     left_context=0
     right_context=0
     if label_delay is not None:
-        left_context = -label_delay
+        if state_preserving == "false":
+            left_context = -label_delay
         right_context = label_delay
 
     splice_array = []
@@ -140,7 +141,7 @@ if __name__ == "__main__":
         if len(lstm_delay) != args.num_lstm_layers:
             sys.exit("--lstm-delay: Number of delays provided has to match --num-lstm-layers")
 
-    parsed_splice_output = ParseSpliceString(args.splice_indexes.strip(), args.label_delay)
+    parsed_splice_output = ParseSpliceString(args.splice_indexes.strip(), args.label_delay, args.state_preserving)
     left_context = parsed_splice_output['left_context']
     right_context = parsed_splice_output['right_context']
     num_hidden_layers = parsed_splice_output['num_hidden_layers']
@@ -174,7 +175,7 @@ if __name__ == "__main__":
     for i in range(args.num_lstm_layers):
         # add recurrent input-nodes
         if (args.state_preserving == "true"):
-            nodes.AddRecurrentInputNodes(config_lines, "Lstm{0}".format(i+1), args.cell_dim, args.recurrent_projection_dim)
+            nodes.AddRecurrentInputNodesForLstm(config_lines, "Lstm{0}".format(i+1), args.cell_dim, args.recurrent_projection_dim)
         prev_layer_output = nodes.AddLstmLayer(config_lines, "Lstm{0}".format(i+1), prev_layer_output, args.cell_dim,
                                          args.recurrent_projection_dim, args.non_recurrent_projection_dim,
                                          args.state_preserving,
@@ -186,7 +187,7 @@ if __name__ == "__main__":
         nodes.AddFinalLayer(config_lines, prev_layer_output, args.num_targets, args.ng_affine_options, args.label_delay)
         # add recurrent output-nodes for state preserving training mode
         if (args.state_preserving == "true"):
-            nodes.AddRecurrentOutputNodes(config_lines, "Lstm{0}".format(i+1), args.label_delay, args.recurrent_projection_dim)
+            nodes.AddRecurrentOutputNodesForLstm(config_lines, "Lstm{0}".format(i+1), args.recurrent_projection_dim)
         config_files['{0}/layer{1}.config'.format(args.config_dir, i+1)] = config_lines
         config_lines = {'components':[], 'component-nodes':[]}
 

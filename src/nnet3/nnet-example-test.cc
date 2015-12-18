@@ -148,9 +148,9 @@ void UnitTestNnetSplitExampleBySplitChunkInExample() {
           // test if the start of indexes "t" is unchanged after split
           KALDI_ASSERT(io[f].indexes.begin()->t == eg.io[f].indexes.begin()->t);
         } else if (io[f].name == "output") {
-        row_offset = i * num_supervised_frames_after_split;
-        num_rows = num_supervised_frames_after_split;
-        KALDI_ASSERT(io[f].indexes.begin()->t == eg.io[f].indexes.begin()->t);
+          row_offset = i * num_supervised_frames_after_split;
+          num_rows = num_supervised_frames_after_split;
+          KALDI_ASSERT(io[f].indexes.begin()->t == eg.io[f].indexes.begin()->t);
         } else if (io[f].name == "ivector") {
           row_offset = 0;
           num_rows = 1;
