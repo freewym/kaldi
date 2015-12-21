@@ -685,8 +685,8 @@ void Nnet::Check() const {
           if (node_name != "output" && (node_index_reserved == -1 || 
               !IsInputNode(node_index_reserved)))
             KALDI_ERR << "The output node \"" << node_name <<"\" should "
-                      << "have its name with suffix "
-                      << "\"_STATE_PREVIOUS_MINIBATCH\"only for an input node.";
+                      << "have its name with suffix \""
+                      << "_STATE_PREVIOUS_MINIBATCH\" only for an input node.";
         }
         std::vector<int32> node_deps;
         node.descriptor.GetNodeDependencies(&node_deps);

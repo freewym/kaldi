@@ -65,7 +65,7 @@ void UnitTestRecurrentNodeNamesAndOffsets() {
     KALDI_LOG << recurrent_node_names[i] << " offset=" << recurrent_offsets[i];
     std::vector<std::string>::iterator iter;
     iter = find(recurrent_node_names_truth.begin(),
-		recurrent_node_names_truth.end(), recurrent_node_names[i]);
+                recurrent_node_names_truth.end(), recurrent_node_names[i]);
     KALDI_ASSERT(iter != recurrent_node_names_truth.end());
     KALDI_ASSERT(recurrent_offsets[i] == -1);
   }

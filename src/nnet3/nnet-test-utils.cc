@@ -969,7 +969,10 @@ void ComputeExampleComputationRequestSimple(
     if (nnet.IsInputNode(i) && node_name != "input" && node_name != "ivector") {
       std::vector<Index> indexes;
       for (int32 n = n_offset; n < n_offset + num_examples; n++)
-        indexes.push_back(Index(n, 0, 0));
+        // there is "-1" in the expression for index "t" values because in our
+        // test we use lstm delay of "-1" for state-preserving LSTM config
+        // (see GenerateConfigSequenceStatePreservingLstm())  
+        indexes.push_back(Index(n, input_start_frame + left_context - 1, 0));
       int32 dim = nnet.InputDim(node_name);
       request->inputs.push_back(IoSpecification(node_name, indexes));
       inputs->push_back(Matrix<BaseFloat>(num_examples, dim));

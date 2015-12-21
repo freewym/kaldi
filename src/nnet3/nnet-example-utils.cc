@@ -218,26 +218,30 @@ void SplitChunk(int32 new_chunk_size, int32 left_context, int32 right_context,
                 const NnetExample &eg, std::vector<NnetExample> *splitted) {
   KALDI_ASSERT(new_chunk_size > 0);
   int32 old_chunk_size = 0, num_chunks = 0, num_input_frames_per_chunk = 0,
-        num_minibatches = 0, extra_left_frames = 0, extra_right_frames = 0,
-        output_t_begin = 0;
+        num_minibatches = 0, extra_left_frames = 0, extra_right_frames = 0;
+  std::vector<int32> output_t_begin;
 
-  for (int32 f = 0; f < static_cast<int32>(eg.io.size()); f++)
+  for (int32 f = 0; f < eg.io.size(); f++)
     if (eg.io[f].name == "output") {
-      // compute the original chunk size, num of chunks in minibatch
-      // and num of minibatches after splitting
+      // compute the original chunk size, num of chunks in minibatch,
+      // the begining output "t" index of each chunk and
+      // num of minibatches after splitting
       old_chunk_size = NumFramesPerChunk(eg.io[f]);
       num_chunks = NumChunks(eg.io[f]);
       KALDI_ASSERT(old_chunk_size % new_chunk_size == 0);
       num_minibatches = old_chunk_size / new_chunk_size;
-      output_t_begin = eg.io[f].indexes.begin()->t;
+      output_t_begin.reserve(num_chunks);
+      for (int32 n = 0; n < num_chunks; n++)
+        output_t_begin.push_back((eg.io[f].indexes.begin() +
+                                 n * old_chunk_size)->t);
       break;
     }
-  for (int32 f = 0; f < static_cast<int32>(eg.io.size()); f++) 
+  for (int32 f = 0; f < eg.io.size(); f++) 
     if (eg.io[f].name == "input") {
       // compute num of input frames per chunk
       num_input_frames_per_chunk = NumFramesPerChunk(eg.io[f]);
       // compute extra left frames and extra right frames
-      extra_left_frames = output_t_begin - eg.io[f].indexes.begin()->t -
+      extra_left_frames = output_t_begin[0] - eg.io[f].indexes.begin()->t -
                           left_context;
       extra_right_frames = num_input_frames_per_chunk - old_chunk_size -
                            left_context - right_context - extra_left_frames;
@@ -256,26 +260,29 @@ void SplitChunk(int32 new_chunk_size, int32 left_context, int32 right_context,
   for (int32 i = 0; iter != end; iter++, i++) {
     NnetExample &new_eg = *iter;
     new_eg.io.resize(eg.io.size());
-    int32 num_feats = static_cast<int32>(eg.io.size());
+    int32 num_feats = eg.io.size();
     std::vector<std::vector<GeneralMatrix const*> > output_lists(num_feats);
     std::vector<std::vector<GeneralMatrix> > output_matrices(num_feats);
     for (int32 f = 0; f < num_feats; f++) {
       new_eg.io[f].name = eg.io[f].name;
       output_matrices[f].resize(num_chunks);
-      if (eg.io[f].name == "output" || NumFramesPerChunk(eg.io[f]) 
-	      == old_chunk_size) { // is output or an NnetIo that has the same size
+      if (eg.io[f].name == "output" || NumFramesPerChunk(eg.io[f]) ==
+          old_chunk_size) { // is output or an NnetIo that has the same size
         new_eg.io[f].indexes.resize(num_chunks * new_chunk_size);
         for (int32 n = 0; n < num_chunks; n++) {
           int32 src_begin_pos = n * old_chunk_size + i * new_chunk_size,
-	            src_end_pos = src_begin_pos + new_chunk_size,
+                src_end_pos = src_begin_pos + new_chunk_size,
                 dst_begin_pos = n * new_chunk_size;
+          // the last frame being copied should be the last row of features
+          if (i == num_minibatches - 1 && n == num_chunks - 1)
+            KALDI_ASSERT(src_end_pos == eg.io[f].features.NumRows());
           // copy indexes
           std::copy(eg.io[f].indexes.begin() + src_begin_pos,
-		            eg.io[f].indexes.begin() + src_end_pos,
-		            new_eg.io[f].indexes.begin() + dst_begin_pos);
+                    eg.io[f].indexes.begin() + src_end_pos,
+                    new_eg.io[f].indexes.begin() + dst_begin_pos);
           // modify indexes "t"
           for (int32 t = 0; t < new_chunk_size; t++)
-            new_eg.io[f].indexes[dst_begin_pos + t].t = t + output_t_begin;
+            new_eg.io[f].indexes[dst_begin_pos + t].t = t + output_t_begin[n];
           // copy corresponding features
           std::vector<bool> keep_rows(eg.io[f].features.NumRows(), false);
           for (int32 j = src_begin_pos; j < src_end_pos; j++)
@@ -291,7 +298,7 @@ void SplitChunk(int32 new_chunk_size, int32 left_context, int32 right_context,
         new_eg.io[f].indexes.resize(num_chunks * (new_chunk_size
                 + left_context + right_context
                 + (i == 0 ? extra_left_frames : 0)
-                + (i == num_minibatches -1 ? extra_right_frames : 0)));
+                + (i == num_minibatches - 1 ? extra_right_frames : 0)));
         for (int32 n = 0; n < num_chunks; n++) {
           int32 src_begin_pos = n * num_input_frames_per_chunk
                         + i * new_chunk_size
@@ -304,6 +311,9 @@ void SplitChunk(int32 new_chunk_size, int32 left_context, int32 right_context,
                         + left_context + right_context
                         + (i == 0 ? extra_left_frames : 0)
                         + (i == num_minibatches - 1 ? extra_right_frames : 0));
+          // the last frame being copied should be the last row of features
+          if (i == num_minibatches - 1 && n == num_chunks - 1)
+            KALDI_ASSERT(src_end_pos == eg.io[f].features.NumRows());
           //copy indexes
           std::copy(eg.io[f].indexes.begin() + src_begin_pos,
                     eg.io[f].indexes.begin() + src_end_pos,
@@ -311,7 +321,7 @@ void SplitChunk(int32 new_chunk_size, int32 left_context, int32 right_context,
           // modify indexes "t"
           int32 t = -left_context - (i == 0 ? extra_left_frames : 0);
           for (int32 j = 0; j < src_end_pos - src_begin_pos; j++, t++)
-            new_eg.io[f].indexes[dst_begin_pos + j].t = t + output_t_begin;
+            new_eg.io[f].indexes[dst_begin_pos + j].t = t + output_t_begin[n];
           // copy corresponding features
           std::vector<bool> keep_rows(eg.io[f].features.NumRows(), false);
           for (int32 j = src_begin_pos; j < src_end_pos; j++)
@@ -325,6 +335,9 @@ void SplitChunk(int32 new_chunk_size, int32 left_context, int32 right_context,
         for (int32 n = 0; n < num_chunks; n++) {
           int32 src_begin_pos = n, src_end_pos = src_begin_pos + 1,
           dst_begin_pos = n;
+          // the last frame being copied should be the last row of features
+          if (i == num_minibatches - 1 && n == num_chunks - 1)
+            KALDI_ASSERT(src_end_pos == eg.io[f].features.NumRows());
           // copy indexes
           std::copy(eg.io[f].indexes.begin() + src_begin_pos,
                     eg.io[f].indexes.begin() + src_end_pos,

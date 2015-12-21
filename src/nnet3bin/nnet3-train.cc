@@ -99,14 +99,14 @@ int main(int argc, char *argv[]) {
       for (int32 count = 0; !example_reader.Done(); example_reader.Next()) {
         if (num_splits_per_chunk > 1 && count > 0) {
           NnetExample eg(example_reader.Value());
-          // recurrent outputs from the previous minibatch 
-          // are inputs to the current minibatch
+          // recurrent outputs of the previous minibatch 
+          // are recurrent inputs of the current minibatch
           std::vector<Matrix<BaseFloat> > recurrent_outputs =
             trainer.GetRecurrentOutputs();
           for (int32 i = 0; i < recurrent_output_names.size(); i++) {
             const std::string &node_name = recurrent_output_names[i];
-            // Add to NnetIo the recurrent connections from
-            // the previous minibatch as additional inputs
+            // Update the recurrent inputs of the current minibatch with
+            // the recurrent outputs of the previous minibatch 
             for (int32 f = 0; f < eg.io.size(); f++) {
               NnetIo &io = eg.io[f];
               if (io.name == (node_name + "_STATE_PREVIOUS_MINIBATCH")) {

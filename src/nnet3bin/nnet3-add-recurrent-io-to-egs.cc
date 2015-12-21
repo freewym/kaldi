@@ -12,7 +12,7 @@ int main(int argc, char *argv[]) {
     typedef kaldi::int64 int64;
 
     const char *usage =
-        "Add additional IOs to examples according to the input/output changes of nnet\n"
+        "Add recurrent IOs to examples according to the input/output changes of nnet\n"
         "for state preserving LSTM training.\n"
         "\n"
         "Usage:  nnet3-add-recurrent-io-to-egs [options] <raw-model-in> <egs-in> <egs-out>\n"
@@ -67,12 +67,18 @@ int main(int argc, char *argv[]) {
       example_reader.Next();
       num_read++;
 
-      // compute the chunk size and num of chunks of each minibatch
+      // compute the chunk size,  num of chunks of each minibatch and 
+      // the begining output "t" index of each chunk in that minibatch
       int32 chunk_size = 0, num_chunks = 0;
+      std::vector<int32> output_t_begin;
       for (int32 f = 0; f < cur_eg.io.size(); f++)
         if (cur_eg.io[f].name == "output") {
           chunk_size = NumFramesPerChunk(cur_eg.io[f]);
           num_chunks = NumChunks(cur_eg.io[f]);
+          output_t_begin.reserve(num_chunks);
+          for (int32 n = 0; n < num_chunks; n++)
+            output_t_begin.push_back((cur_eg.io[f].indexes.begin() +
+                                     n * chunk_size)->t);
           break;
         }
       int32 extra_left_frames = 0, extra_right_frames = 0;
@@ -81,11 +87,12 @@ int main(int argc, char *argv[]) {
           // compute num of input frames per chunk
           int32 num_input_frames_per_chunk = NumFramesPerChunk(cur_eg.io[f]);
           // compute extra left frames and extra right frames
-          extra_left_frames = -cur_eg.io[f].indexes.begin()->t - left_context;
+          extra_left_frames = output_t_begin[0] - 
+                              cur_eg.io[f].indexes.begin()->t - left_context;
           extra_right_frames = num_input_frames_per_chunk - chunk_size -
                                left_context - right_context - extra_left_frames;
           break;
-    }
+      }
 
       for (int32 i = 0; i < recurrent_output_names.size(); i++) {
         const std::string &node_name = recurrent_output_names[i];
@@ -95,40 +102,45 @@ int main(int argc, char *argv[]) {
         // create zero matrix for input
         Matrix<BaseFloat> zero_matrix_as_input(num_chunks * abs(offset),
                                                nnet.OutputDim(node_name));
-        // Add to NnetIo the recurrent connections from
-        // the previous minibatch as additional inputs
+        // Add recurrent inputs to each NnetExample's io 
         cur_eg.io.push_back(NnetIo(node_name + "_STATE_PREVIOUS_MINIBATCH", 0,
                             zero_matrix_as_input));
-        // Correct the indexes: so that "n" ranges [0, feats.NumRows() - 1]
-        // and "t" ranges [-extra_left_frames + offset, -extra_left_frames - 1]
-        // (if offset < 0) or [extra_right_frames + chunk_size,
-        // extra_right_frames + chunk_size + offset - 1] (if offset > 0). 
-        // The assumption is that the output frames "t" indexes ranges
-        // [0, num_chunks - 1]
+        // Correct the indexes: so that "n" ranges [0, feats.NumRows() - 1] and
+        // "t" ranges [output_t_begin[n] - extra_left_frames + offset,
+        // output_t_begin[n] - extra_left_frames - 1] (if offset < 0) or
+        // [output_t_begin[n] + extra_right_frames + chunk_size,
+        // output_t_begin[n] + extra_right_frames + chunk_size + offset - 1]
+        // (if offset > 0). 
+        // The assumption is that the n-th chunk's output frames "t" indexes
+        // ranges [output_t_begin[n], output_t_begin[n] + num_chunks - 1]
         std::vector<Index> &indexes_input = cur_eg.io.back().indexes;
-        for (int32 n = 0, j = 0; n < num_chunks; n++)
-          for (int32 t = 0; t < abs(offset); t++, j++) {
+        for (int32 n = 0; n < num_chunks; n++)
+          for (int32 t = 0; t < abs(offset); t++) {
+            int32 j = n * abs(offset) + t;
             indexes_input[j].n = n;
             if (offset < 0)
-              indexes_input[j].t = -extra_left_frames + offset + t;
+              indexes_input[j].t = output_t_begin[n] - extra_left_frames +
+                                   offset + t;
             else
-              indexes_input[j].t = extra_right_frames + chunk_size + t;
+              indexes_input[j].t = output_t_begin[n] + extra_right_frames +
+                                   chunk_size + t;
           }
 
         // create zero matrix for output
         Matrix<BaseFloat> zero_matrix_as_output(num_chunks * chunk_size,
                                                 nnet.OutputDim(node_name));
-        // Add to NnetIo the recurrent connections in the current minibatch 
-        // as additional outputs. Actually the contents of output matrix is
-        // irrelevant; we don't need it as supervision; we only need its 
-        // NunRows info for NnetIo::indexes. So we just use zero matrix.
+        // Add recurrent outputs to each NnetExample's io.
+        // Actually the contents of output matrix is irrelevant; we don't need
+        // it as supervision; we only need its NunRows info for NnetIo::indexes.
+        // So we just use zero matrix.
         cur_eg.io.push_back(NnetIo(node_name, 0, zero_matrix_as_output));
         // correct the indexes.
         std::vector<Index> &indexes_output = cur_eg.io.back().indexes;
-        for (int32 n = 0, j = 0; n < num_chunks; n++)
-          for (int32 t = 0; t < chunk_size; t++, j++) {
+        for (int32 n = 0; n < num_chunks; n++)
+          for (int32 t = 0; t < chunk_size; t++) {
+            int32 j = n * chunk_size + t;
             indexes_output[j].n = n;
-            indexes_output[j].t = t;
+            indexes_output[j].t = output_t_begin[n] + t;
           }
       }
 

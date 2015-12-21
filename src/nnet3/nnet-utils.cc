@@ -237,11 +237,14 @@ static void ComputeSimpleNnetContextForShift(
   for (int32 t = input_start; t < input_end; t++) {
     input.indexes.push_back(Index(n, t));
     output.indexes.push_back(Index(n, t));
-    for (int32 i = 0; i < r_inputs.size(); i++)
-      r_inputs[i].indexes.push_back(Index(n, t));
+    //for (int32 i = 0; i < r_inputs.size(); i++)
+      //r_inputs[i].indexes.push_back(Index(n, t));
     for (int32 i = 0; i < r_outputs.size(); i++)
       r_outputs[i].indexes.push_back(Index(n, t));
   }
+  for (int32 t = input_start - 100; t < input_end + 100; t++)// an ugly hack
+    for (int32 i = 0; i < r_inputs.size(); i++)
+      r_inputs[i].indexes.push_back(Index(n, t));
   // the assumption here is that the network just requires the ivector at time
   // t=0.
   ivector.indexes.push_back(Index(n, 0));

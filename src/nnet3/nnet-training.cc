@@ -131,6 +131,17 @@ void NnetTrainer::UpdateRecurrentOutputs(const NnetExample &eg,
                                          &recurrent_output_names,
                                          const std::vector<int32>
                                          &recurrent_offsets) {
+  for (int32 i = 0; i < recurrent_output_names.size(); i++) {//debug
+    KALDI_ASSERT(recurrent_output_names[i] + "_STATE_PREVIOUS_MINIBATCH" == eg.io[i * 2 + 3].name);//debug
+    Matrix<BaseFloat> zero = Matrix<BaseFloat>(eg.io[i * 2+ 3].features.NumRows(), eg.io[i * 2 + 3].features.NumCols());//debug
+    Matrix<BaseFloat> feat;//debug
+    eg.io[i * 2 + 3].features.GetMatrix(&feat);//debug
+    if (!ApproxEqual(zero, feat, static_cast<BaseFloat>(0.0001))) {//debug
+      KALDI_LOG << "not zero";//debug
+      KALDI_ASSERT(recurrent_output_names.size() == recurrent_outputs_.size());//debug
+      KALDI_ASSERT(ApproxEqual(recurrent_outputs_[i], feat, static_cast<BaseFloat>(0.0001)));//debug
+    }//debug
+  }//debug
   // compute the chunk size and num of chunks of the current minibatch
   int32 chunk_size = -1, num_chunks = -1;
   for (int32 f = 0; f < eg.io.size(); f++)
@@ -148,22 +159,22 @@ void NnetTrainer::UpdateRecurrentOutputs(const NnetExample &eg,
   std::vector<int32>::const_iterator iter2 = recurrent_offsets.begin();
   for (; iter != end; ++iter, ++iter2) {
     const std::string &node_name = *iter;
-    // get the cuda matrix correspoding to the recurrent output
+    // get the cuda matrix corresponding to the recurrent output
     const CuMatrixBase<BaseFloat> &r_cuda_all = computer.GetOutput(node_name);
     KALDI_ASSERT(r_cuda_all.NumRows() == num_chunks * chunk_size);
 
     // only copy the rows corresponding to the recurrent output of the
-    // last (if offset < 0) or first (if offset > 0) abs(offset) frames 
+    // last (if offset < 0) or first (if offset > 0) [abs(offset)] frames 
     // of each chunk from the previous minibatch
     const int32 offset = *iter2;
     KALDI_ASSERT(offset != 0);
     std::vector<int32> indexes(num_chunks * abs(offset));
-    for (int32 i = 0; i < num_chunks; i++)
-      for (int32 j = 0; j < abs(offset); j++)
+    for (int32 n = 0; n < num_chunks; n++)
+      for (int32 t = 0; t < abs(offset); t++)
         if (offset < 0)
-          indexes[i * abs(offset) + j] = (i + 1) * chunk_size + (offset + j);
+          indexes[n * abs(offset) + t] = (n + 1) * chunk_size + offset + t;
         else
-          indexes[i * abs(offset) + j] = i * chunk_size + j;
+          indexes[n * abs(offset) + t] = n * chunk_size + t;
 
     CuArray<int32> indexes_cuda(indexes);
 
