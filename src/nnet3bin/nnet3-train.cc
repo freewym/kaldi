@@ -97,6 +97,7 @@ int main(int argc, char *argv[]) {
       SequentialNnetExampleReader example_reader(examples_rspecifier);
 
       for (int32 count = 0; !example_reader.Done(); example_reader.Next()) {
+        KALDI_LOG << "count=" << count;//debug
         if (num_splits_per_chunk > 1 && count > 0) {
           NnetExample eg(example_reader.Value());
           // recurrent outputs of the previous minibatch 
