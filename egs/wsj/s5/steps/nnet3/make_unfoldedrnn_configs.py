@@ -78,6 +78,14 @@ def GetArgs():
     parser.add_argument("--objective-type", type=str,
                         help = "the type of objective; i.e. quadratic or linear",
                         default="linear", choices = ["linear", "quadratic"])
+    parser.add_argument("--xent-regularize", type=float,
+                        help="For chain models, if nonzero, add a separate output for cross-entropy "
+                        "regularization (with learning-rate-factor equal to the inverse of this)",
+                        default=0.0)
+    parser.add_argument("--xent-separate-forward-affine", type=str, action=nnet3_train_lib.StrToBoolAction,
+                        help="if using --xent-regularize, gives it separate last-but-one weight matrix",
+                        default=False, choices = ["false", "true"])
+ 
     parser.add_argument("--final-layer-normalize-target", type=float,
                         help="RMS target for final layer (set to <1 if final layer learns too fast",
                         default=1.0)
@@ -150,6 +158,9 @@ def CheckArgs(args):
     if args.add_final_sigmoid and args.include_log_softmax:
         raise Exception("--include-log-softmax and --add-final-sigmoid cannot both be true.")
 
+    if args.xent_separate_forward_affine and args.add_final_sigmoid:
+        raise Exception("It does not make sense to have --add-final-sigmoid=true when xent-separate-forward-affine is true")
+
     if args.rnn_delay is None:
         args.rnn_delay = [[-1]] * args.num_rnn_layers
     else:
@@ -178,20 +189,24 @@ def WriteIdentityMatrixAndZeroBias(filename, output_dim, scale):
     f.write("]\n")
     f.close()
 
-def ParseSpliceString(splice_indexes, label_delay=None, num_unfolded_times=None, rnn_delay=[-1]):
+def ParseSpliceString(splice_indexes, label_delay=None, num_unfolded_times=None, rnn_delay=[[-1]]):
     splice_array = []
     left_context = 0
     right_context = 0
+    temp=[[3,3],[2,2],[2,1]]
     if label_delay is not None:
         left_context = -label_delay
         right_context = label_delay
 
-    assert(rnn_delay[0] < 0)
-    assert(len(rnn_delay) == 1 or rnn_delay[1] > 0)
     if num_unfolded_times is not None:
         assert(num_unfolded_times > 0)
-        left_context += -rnn_delay[0] * (num_unfolded_times - 1) * 2
-        right_context += rnn_delay[1] * (num_unfolded_times - 1) * 2 if len(rnn_delay) > 1 else 0 
+        i = 0
+        for layer_delay in rnn_delay:
+            assert(layer_delay[0] < 0)
+            assert(len(layer_delay) == 1 or layer_delay[1] > 0)
+            left_context += -layer_delay[0] * ((num_unfolded_times - 1 - i) if i == 0 else temp[i][0] - 1)
+            right_context += layer_delay[1] * ((num_unfolded_times - 1 - i) if i == 0 else temp[i][1] - 1) if len(layer_delay) > 1 else 0 
+            i=i+1
 
     split1 = splice_indexes.split();  # we already checked the string is nonempty.
     if len(split1) < 1:
@@ -255,10 +270,12 @@ def MakeConfigs(config_dir, splice_indexes_string,
                 label_delay,
                 include_log_softmax,
                 add_final_sigmoid,
+                xent_regularize,
+                xent_separate_forward_affine,
                 self_repair_scale,
                 objective_type):
 
-    parsed_splice_output = ParseSpliceString(splice_indexes_string.strip(), label_delay, num_unfolded_times, rnn_delay[0])
+    parsed_splice_output = ParseSpliceString(splice_indexes_string.strip(), label_delay, num_unfolded_times, rnn_delay)
 
     left_context = parsed_splice_output['left_context']
     right_context = parsed_splice_output['right_context']
@@ -268,6 +285,12 @@ def MakeConfigs(config_dir, splice_indexes_string,
     if (num_hidden_layers < num_rnn_layers):
         raise Exception("num-rnn-layers : number of rnn layers has to be greater than number of layers, decided based on splice-indexes")
 
+    if xent_separate_forward_affine:
+        pass
+        '''
+        if splice_indexes[-1] != [0]:
+            raise Exception("--xent-separate-forward-affine option is supported only if the last-hidden layer has no splicing before it. Please use a splice-indexes with just 0 as the final splicing config.")
+        '''
     prior_scale_file = '{0}/presoftmax_prior_scale.vec'.format(config_dir)
 
     config_lines = {'components':[], 'component-nodes':[]}
@@ -291,19 +314,20 @@ def MakeConfigs(config_dir, splice_indexes_string,
 
     # initialize RNN affine parameters with identity matrix and 0 bias
     # WriteIdentityMatrixAndZeroBias(config_dir + '/rnn_affine_init.mat', rnn_dim, 1.0)
+    temp=[[3,3],[2,2],[2,1]]
     for i in range(num_rnn_layers):
         if len(rnn_delay[i]) == 2: # bidirectional RNN case, add both forward and backward 
             prev_layer_output_forward = nodes.AddUnfoldedRnnLayer(config_lines,
                                             "BUnfoldedRnn{0}_forward".format(i+1),
                                             prev_layer_output, rnn_dim,
-                                            num_unfolded_times = num_unfolded_times,
+                                            num_unfolded_times = ((num_unfolded_times - i) if i == 0 else temp[i][0]),
                                             ng_affine_options = ng_affine_options,
                                             rnn_delay = rnn_delay[i][0],
                                             self_repair_scale = self_repair_scale)
             prev_layer_output_backward = nodes.AddUnfoldedRnnLayer(config_lines,
                                             "BUnfoldedRnn{0}_backward".format(i+1),
                                             prev_layer_output, rnn_dim,
-                                            num_unfolded_times = num_unfolded_times,
+                                            num_unfolded_times = ((num_unfolded_times - i) if i == 0 else temp[i][1]),
                                             ng_affine_options = ng_affine_options,
                                             rnn_delay = rnn_delay[i][1],
                                             self_repair_scale = self_repair_scale)
@@ -317,13 +341,57 @@ def MakeConfigs(config_dir, splice_indexes_string,
                                             ng_affine_options = ng_affine_options,
                                             rnn_delay = rnn_delay[i][0],
                                             self_repair_scale = self_repair_scale)
-    
-        # make the intermediate config file for layerwise discriminative training
-        nodes.AddFinalLayer(config_lines, prev_layer_output, num_targets,
-                            use_presoftmax_prior_scale = use_presoftmax_prior_scale,
-                            prior_scale_file = prior_scale_file,
-                            label_delay = label_delay,
-                            include_log_softmax = include_log_softmax)
+        
+        if xent_separate_forward_affine and i == num_hidden_layers - 1:
+            if xent_regularize == 0.0:
+                raise Exception("xent-separate-forward-affine=True is valid only if xent-regularize is non-zero")
+
+            prev_layer_output_chain = nodes.AddAffRelNormLayer(config_lines, "L_pre_final_chain",
+                                                    prev_layer_output, fully_connected_layer_dim,
+                                                    self_repair_scale = self_repair_scale,
+                                                    norm_target_rms = final_layer_normalize_target)
+            
+            nodes.AddFinalLayer(config_lines, prev_layer_output_chain, num_targets,
+                               use_presoftmax_prior_scale = use_presoftmax_prior_scale,
+                               prior_scale_file = prior_scale_file,
+                               include_log_softmax = include_log_softmax)
+
+            prev_layer_output_xent = nodes.AddAffRelNormLayer(config_lines, "L_pre_final_xent",
+                                                    prev_layer_output, fully_connected_layer_dim,
+                                                    self_repair_scale = self_repair_scale,
+                                                    norm_target_rms = final_layer_normalize_target)
+
+            nodes.AddFinalLayer(config_lines, prev_layer_output_xent, num_targets,
+                                ng_affine_options = " param-stddev=0 bias-stddev=0 learning-rate-factor={0} ".format(
+                                    0.5 / xent_regularize),
+                                use_presoftmax_prior_scale = use_presoftmax_prior_scale,
+                                prior_scale_file = prior_scale_file,
+                                include_log_softmax = True,
+                                name_affix = 'xent')
+        elif i == num_hidden_layers - 1:
+            prev_layer_output = nodes.AddAffRelNormLayer(config_lines, "L_{0}".format(i),
+                                                        prev_layer_output, fully_connected_layer_dim,
+                                                        self_repair_scale = self_repair_scale,
+                                                        norm_target_rms = 1.0 if i < num_hidden_layers - 1 else final_layer_normalize_target)
+            nodes.AddFinalLayer(config_lines, prev_layer_output, num_targets,
+                                use_presoftmax_prior_scale = use_presoftmax_prior_scale,
+                                prior_scale_file = prior_scale_file,
+                                label_delay = label_delay,
+                                include_log_softmax = include_log_softmax)
+        else:
+            # make the intermediate config file for layerwise discriminative training
+            nodes.AddFinalLayer(config_lines, prev_layer_output, num_targets,
+                                use_presoftmax_prior_scale = use_presoftmax_prior_scale,
+                                prior_scale_file = prior_scale_file,
+                                label_delay = label_delay,
+                                include_log_softmax = include_log_softmax)
+            if xent_regularize != 0.0:
+                nodes.AddFinalLayer(config_lines, prev_layer_output, num_targets,
+                                    ng_affine_options = " param-stddev=0 bias-stddev=0 learning-rate-factor={0} ".format(0.5 / xent_regularize),
+                                    use_presoftmax_prior_scale = use_presoftmax_prior_scale,
+                                    prior_scale_file = prior_scale_file,
+                                    include_log_softmax = True,
+                                    name_affix = 'xent')
 
         config_files['{0}/layer{1}.config'.format(config_dir, i+1)] = config_lines
         config_lines = {'components':[], 'component-nodes':[]}
@@ -350,18 +418,52 @@ def MakeConfigs(config_dir, splice_indexes_string,
                                  'dimension'  : appended_dimension}
         else:
             pass
-        prev_layer_output = nodes.AddAffRelNormLayer(config_lines, "L_{0}".format(i),
-                                                     prev_layer_output,
-                                                     fully_connected_layer_dim,
-                                                     self_repair_scale = self_repair_scale,
-                                                     norm_target_rms = 1.0 if i < num_hidden_layers - 1 else final_layer_normalize_target)
 
-        # make the intermediate config file for layerwise discriminative training
-        nodes.AddFinalLayer(config_lines, prev_layer_output, num_targets,
-                            use_presoftmax_prior_scale = use_presoftmax_prior_scale,
-                            prior_scale_file = prior_scale_file,
-                            label_delay = label_delay,
-                            include_log_softmax = include_log_softmax)
+        if xent_separate_forward_affine and i == num_hidden_layers - 1:
+            if xent_regularize == 0.0:
+                raise Exception("xent-separate-forward-affine=True is valid only if xent-regularize is non-zero")
+
+            prev_layer_output_chain = nodes.AddAffRelNormLayer(config_lines, "L_pre_final_chain",
+                                                    prev_layer_output, fully_connected_layer_dim,
+                                                    self_repair_scale = self_repair_scale,
+                                                    norm_target_rms = final_layer_normalize_target)
+            
+            nodes.AddFinalLayer(config_lines, prev_layer_output_chain, num_targets,
+                               use_presoftmax_prior_scale = use_presoftmax_prior_scale,
+                               prior_scale_file = prior_scale_file,
+                               include_log_softmax = include_log_softmax)
+
+            prev_layer_output_xent = nodes.AddAffRelNormLayer(config_lines, "L_pre_final_xent",
+                                                    prev_layer_output, fully_connected_layer_dim,
+                                                    self_repair_scale = self_repair_scale,
+                                                    norm_target_rms = final_layer_normalize_target)
+
+            nodes.AddFinalLayer(config_lines, prev_layer_output_xent, num_targets,
+                                ng_affine_options = " param-stddev=0 bias-stddev=0 learning-rate-factor={0} ".format(
+                                    0.5 / xent_regularize),
+                                use_presoftmax_prior_scale = use_presoftmax_prior_scale,
+                                prior_scale_file = prior_scale_file,
+                                include_log_softmax = True,
+                                name_affix = 'xent')
+        else:
+            prev_layer_output = nodes.AddAffRelNormLayer(config_lines, "L_{0}".format(i),
+                                                        prev_layer_output, fully_connected_layer_dim,
+                                                        self_repair_scale = self_repair_scale,
+                                                        norm_target_rms = 1.0 if i < num_hidden_layers - 1 else final_layer_normalize_target)
+
+            # make the intermediate config file for layerwise discriminative training
+            nodes.AddFinalLayer(config_lines, prev_layer_output, num_targets,
+                                use_presoftmax_prior_scale = use_presoftmax_prior_scale,
+                                prior_scale_file = prior_scale_file,
+                                label_delay = label_delay,
+                                include_log_softmax = include_log_softmax)
+            if xent_regularize != 0.0:
+                nodes.AddFinalLayer(config_lines, prev_layer_output, num_targets,
+                                    ng_affine_options = " param-stddev=0 bias-stddev=0 learning-rate-factor={0} ".format(0.5 / xent_regularize),
+                                    use_presoftmax_prior_scale = use_presoftmax_prior_scale,
+                                    prior_scale_file = prior_scale_file,
+                                    include_log_softmax = True,
+                                    name_affix = 'xent')
 
         config_files['{0}/layer{1}.config'.format(config_dir, i+1)] = config_lines
         config_lines = {'components':[], 'component-nodes':[]}
@@ -401,6 +503,8 @@ def Main():
                 label_delay = args.label_delay,
                 include_log_softmax = args.include_log_softmax,
                 add_final_sigmoid = args.add_final_sigmoid,
+                xent_regularize = args.xent_regularize,
+                xent_separate_forward_affine = args.xent_separate_forward_affine,
                 self_repair_scale = args.self_repair_scale,
                 objective_type = args.objective_type)
 
