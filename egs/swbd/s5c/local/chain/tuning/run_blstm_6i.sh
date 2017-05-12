@@ -126,10 +126,11 @@ if [ $stage -le 12 ]; then
     --num-lstm-layers 3 \
     --cell-dim 1024 \
     --hidden-dim 1024 \
-    --recurrent-projection-dim 256 \
-    --non-recurrent-projection-dim 256 \
+    --recurrent-projection-dim 128 \
+    --non-recurrent-projection-dim 128 \
     --label-delay $label_delay \
-    --self-repair-scale 0.00001 \
+    --self-repair-scale-nonlinearity 0.00001 \
+    --self-repair-scale-clipgradient 1.0 \
    $dir/configs || exit 1;
 
 fi

@@ -326,6 +326,9 @@ def AddLstmLayer(config_lines,
     components.append("component name={0}_W_f-xr type=NaturalGradientAffineComponent input-dim={1} output-dim={2} {3}".format(name, input_dim + recurrent_projection_dim, cell_dim, ng_affine_options))
     components.append("# note : the cell outputs pass through a diagonal matrix")
     components.append("component name={0}_w_fc type=NaturalGradientPerElementScaleComponent  dim={1} {2}".format(name, cell_dim, ng_per_element_scale_options))
+    #components.append("component name={0}_W_ff-xr type=NaturalGradientAffineComponent input-dim={1} output-dim={2} {3}".format(name, input_dim + recurrent_projection_dim, cell_dim, ng_affine_options))
+    #components.append("# note : the cell outputs pass through a diagonal matrix")
+    #components.append("component name={0}_w_ffc type=NaturalGradientPerElementScaleComponent  dim={1} {2}".format(name, cell_dim, ng_per_element_scale_options))
 
     components.append("#  Output gate control : W_o* matrices")
     components.append("component name={0}_W_o-xr type=NaturalGradientAffineComponent input-dim={1} output-dim={2} {3}".format(name, input_dim + recurrent_projection_dim, cell_dim, ng_affine_options))
@@ -339,12 +342,14 @@ def AddLstmLayer(config_lines,
     components.append("# Defining the non-linearities")
     components.append("component name={0}_i type=SigmoidComponent dim={1} {2}".format(name, cell_dim, self_repair_nonlinearity_string))
     components.append("component name={0}_f type=SigmoidComponent dim={1} {2}".format(name, cell_dim, self_repair_nonlinearity_string))
+    #components.append("component name={0}_ff type=SigmoidComponent dim={1} {2}".format(name, cell_dim, self_repair_nonlinearity_string))
     components.append("component name={0}_o type=SigmoidComponent dim={1} {2}".format(name, cell_dim, self_repair_nonlinearity_string))
     components.append("component name={0}_g type=TanhComponent dim={1} {2}".format(name, cell_dim, self_repair_nonlinearity_string))
     components.append("component name={0}_h type=TanhComponent dim={1} {2}".format(name, cell_dim, self_repair_nonlinearity_string))
 
     components.append("# Defining the cell computations")
     components.append("component name={0}_c1 type=ElementwiseProductComponent input-dim={1} output-dim={2}".format(name, 2 * cell_dim, cell_dim))
+    #components.append("component name={0}_c3 type=ElementwiseProductComponent input-dim={1} output-dim={2}".format(name, 2 * cell_dim, cell_dim))
     components.append("component name={0}_c2 type=ElementwiseProductComponent input-dim={1} output-dim={2}".format(name, 2 * cell_dim, cell_dim))
     components.append("component name={0}_m type=ElementwiseProductComponent input-dim={1} output-dim={2}".format(name, 2 * cell_dim, cell_dim))
     components.append("component name={0}_c type=ClipGradientComponent dim={1} clipping-threshold={2} norm-based-clipping={3} {4}".format(name, cell_dim, clipping_threshold, norm_based_clipping, self_repair_clipgradient_string))
@@ -352,6 +357,7 @@ def AddLstmLayer(config_lines,
     # c1_t and c2_t defined below
     component_nodes.append("component-node name={0}_c_t component={0}_c input=Sum({0}_c1_t, {0}_c2_t)".format(name))
     c_tminus1_descriptor = "IfDefined(Offset({0}_c_t, {1}))".format(name, lstm_delay)
+    #c_tminus4_descriptor = "IfDefined(Offset({0}_c_t, {1}))".format(name, lstm_delay+1 if lstm_delay>0 else lstm_delay-1)
 
     component_nodes.append("# i_t")
     component_nodes.append("component-node name={0}_i1 component={0}_W_i-xr input=Append({1}, IfDefined(Offset({0}_{2}, {3})))".format(name, input_descriptor, recurrent_connection, lstm_delay))
@@ -362,6 +368,9 @@ def AddLstmLayer(config_lines,
     component_nodes.append("component-node name={0}_f1 component={0}_W_f-xr input=Append({1}, IfDefined(Offset({0}_{2}, {3})))".format(name, input_descriptor, recurrent_connection, lstm_delay))
     component_nodes.append("component-node name={0}_f2 component={0}_w_fc  input={1}".format(name, c_tminus1_descriptor))
     component_nodes.append("component-node name={0}_f_t component={0}_f input=Sum({0}_f1,{0}_f2)".format(name))
+    #component_nodes.append("component-node name={0}_ff1 component={0}_W_ff-xr input=Append({1}, IfDefined(Offset({0}_{2}, {3})))".format(name, input_descriptor, recurrent_connection, lstm_delay+1 if lstm_delay>0 else lstm_delay-1))
+    #component_nodes.append("component-node name={0}_ff2 component={0}_w_ffc  input={1}".format(name, c_tminus4_descriptor))
+    #component_nodes.append("component-node name={0}_ff_t component={0}_ff input=Sum({0}_ff1,{0}_ff2)".format(name))
 
     component_nodes.append("# o_t")
     component_nodes.append("component-node name={0}_o1 component={0}_W_o-xr input=Append({1}, IfDefined(Offset({0}_{2}, {3})))".format(name, input_descriptor, recurrent_connection, lstm_delay))
@@ -377,6 +386,7 @@ def AddLstmLayer(config_lines,
 
     component_nodes.append("# parts of c_t")
     component_nodes.append("component-node name={0}_c1_t component={0}_c1  input=Append({0}_f_t, {1})".format(name, c_tminus1_descriptor))
+    #component_nodes.append("component-node name={0}_c3_t component={0}_c3  input=Append({0}_ff_t, {1})".format(name, c_tminus4_descriptor))
     component_nodes.append("component-node name={0}_c2_t component={0}_c2 input=Append({0}_i_t, {0}_g_t)".format(name))
 
     component_nodes.append("# m_t")
@@ -391,8 +401,12 @@ def AddLstmLayer(config_lines,
         component_nodes.append("component-node name={0}_rp_t component={0}_W-m input={0}_m_t".format(name))
         component_nodes.append("dim-range-node name={0}_r_t_preclip input-node={0}_rp_t dim-offset=0 dim={1}".format(name, recurrent_projection_dim))
         component_nodes.append("component-node name={0}_r_t component={0}_r input={0}_r_t_preclip".format(name))
+        #if "Lstm" in input['descriptor']:
         output_descriptor = '{0}_rp_t'.format(name)
         output_dim = recurrent_projection_dim + non_recurrent_projection_dim
+        #else:
+         #   output_descriptor = '{0}_rp_t, IfDefined(Offset({0}_r_t, {1})), IfDefined(Offset({0}_r_t, {2}))'.format(name, -1 if lstm_delay < 0 else 1, -2 if lstm_delay < 0 else 2)
+         #   output_dim = recurrent_projection_dim + non_recurrent_projection_dim + recurrent_projection_dim * 2
 
     elif add_recurrent_projection:
         components.append("# projection matrices : Wrm")
