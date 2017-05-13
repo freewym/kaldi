@@ -38,6 +38,7 @@ struct NnetTrainerOptions {
   BaseFloat momentum;
   BaseFloat backstitch_training_scale;
   int32 backstitch_training_interval;
+  BaseFloat perturb_epsilon;
   std::string read_cache;
   std::string write_cache;
   bool binary_write_cache;
@@ -53,6 +54,7 @@ struct NnetTrainerOptions {
       momentum(0.0),
       backstitch_training_scale(0.0),
       backstitch_training_interval(1),
+      perturb_epsilon(0.0),
       binary_write_cache(true),
       max_param_change(2.0) { }
   void Register(OptionsItf *opts) {
@@ -81,6 +83,7 @@ struct NnetTrainerOptions {
                    &backstitch_training_interval,
                    "do backstitch training with the specified interval of "
                    "minibatches.");
+    opts->Register("perturb-epsilon", &perturb_epsilon,"perturb epsilon.");
     opts->Register("read-cache", &read_cache, "the location where we can read "
                    "the cached computation from");
     opts->Register("write-cache", &write_cache, "the location where we want to "
@@ -167,6 +170,9 @@ class NnetTrainer {
   // per-component max-change and global max-change were enforced.
   void PrintMaxChangeStats() const;
 
+  void PerturbInputWithInputDeriv(const NnetExample &eg,
+                                  NnetExample *eg_perturbed);
+
   ~NnetTrainer();
  private:
   // The internal function for doing one step of SGD training. There are three
@@ -200,6 +206,8 @@ class NnetTrainer {
   int32 num_max_change_global_applied_;
 
   unordered_map<std::string, ObjectiveFunctionInfo, StringHasher> objf_info_;
+
+  unordered_map<std::string, ObjectiveFunctionInfo, StringHasher> accuracy_info_;
 
   // This value is used in backstitch training when we need to ensure
   // consistent dropout masks.  It's set to a value derived from rand()

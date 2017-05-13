@@ -75,6 +75,8 @@ void ReadVectorAsChar(std::istream &is,
                       bool binary,
                       Vector<BaseFloat> *vec);
 
+// Gets Minibatch size of an example
+int32 GetMinibatchSize(const NnetExample &eg);
 
 // Warning: after reading in the values from the command line
 // (Register() and then then po.Read()), you should then call ComputeDerived()

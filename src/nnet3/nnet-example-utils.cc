@@ -287,6 +287,25 @@ void RoundUpNumFrames(int32 frame_subsampling_factor,
   }
 }
 
+int32 GetMinibatchSize(const NnetExample &eg) {
+  // Computes it by just finding the the starting and the largest "n" value of
+  // the NnetIo named "input"
+  for (int32 i = 0; i < eg.io.size(); i++) {
+    const NnetIo &io = eg.io[i];
+    if (io.name == "input") {
+      std::vector<Index>::const_iterator begin = io.indexes.begin(),
+                                         iter = begin,
+                                         end = io.indexes.end();
+      int32 n_offset = begin->n, n = n_offset;
+      for (; iter != end; ++iter)
+      n = std::max(iter->n, n);
+      return n - n_offset + 1;
+    }
+  }
+  KALDI_ERR << "Cannot find an NnetIo named \"input\" in the given example.";
+  return 0;
+}
+
 void ExampleGenerationConfig::ComputeDerived() {
   if (!SplitStringToIntegers(num_frames_str, ",", false, &num_frames) ||
       num_frames.empty()) {

@@ -20,6 +20,7 @@
 #include "base/kaldi-common.h"
 #include "util/common-utils.h"
 #include "nnet3/nnet-training.h"
+#include "nnet3/nnet-utils.h"
 
 
 int main(int argc, char *argv[]) {
@@ -70,12 +71,21 @@ int main(int argc, char *argv[]) {
     Nnet nnet;
     ReadKaldiObject(nnet_rxfilename, &nnet);
 
+    SetBatchnormTestMode(true, &nnet);
+
     NnetTrainer trainer(train_config, &nnet);
 
     SequentialNnetExampleReader example_reader(examples_rspecifier);
 
-    for (; !example_reader.Done(); example_reader.Next())
-      trainer.Train(example_reader.Value());
+    for (; !example_reader.Done(); example_reader.Next()) {
+      if (train_config.perturb_epsilon > 0.0) {
+        NnetExample eg_perturbed(example_reader.Value());
+        trainer.PerturbInputWithInputDeriv(example_reader.Value(), &eg_perturbed);
+        trainer.Train(eg_perturbed);
+      } else {
+        trainer.Train(example_reader.Value());
+      }
+    }
 
     bool ok = trainer.PrintTotalStats();
 

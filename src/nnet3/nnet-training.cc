@@ -20,6 +20,7 @@
 
 #include "nnet3/nnet-training.h"
 #include "nnet3/nnet-utils.h"
+#include "nnet3/nnet-diagnostics.h"
 
 namespace kaldi {
 namespace nnet3 {
@@ -131,6 +132,68 @@ void NnetTrainer::TrainInternal(const NnetExample &eg,
     ScaleNnet(0.0, delta_nnet_);
 }
 
+void NnetTrainer::PerturbInputWithInputDeriv(const NnetExample &eg,
+                                             NnetExample *eg_perturbed) {
+  bool need_model_derivative = true;
+  ComputationRequest request;
+  GetComputationRequest(*nnet_, eg, need_model_derivative,
+                        config_.store_component_stats,
+                        &request);
+  for (int32 i = 0; i < request.inputs.size(); i++)
+    request.inputs[i].has_deriv = true;
+
+  const NnetComputation *computation = compiler_.Compile(request);
+  Nnet nnet_temp(*nnet_);
+  NnetComputer computer(config_.compute_config, *computation,
+                        *nnet_, &nnet_temp);
+  // give the inputs to the computer object.
+  computer.AcceptInputs(*nnet_, eg.io);
+  computer.Run();
+
+  this->ProcessOutputs(false, eg, &computer);
+  computer.Run();
+
+  int32 minibatch_size = GetMinibatchSize(eg);
+
+  std::vector<BaseFloat> deriv_norm_sqr(minibatch_size, 0.0);
+  for (size_t i = 0; i < eg_perturbed->io.size(); i++) {
+    const NnetIo &io = eg_perturbed->io[i];
+    int32 node_index = nnet_->GetNodeIndex(io.name);
+    if (node_index == -1)
+      KALDI_ERR << "No node named '" << io.name << "' in nnet.";
+    if (nnet_->IsInputNode(node_index)) {
+      const CuMatrixBase<BaseFloat> &input_deriv = computer.GetOutput(io.name);
+
+      int32 block_size = io.features.NumRows() / minibatch_size;
+      for (int32 j = 0; j < minibatch_size; j++) {
+        BaseFloat norm = input_deriv.RowRange(j * block_size, block_size).FrobeniusNorm();
+        deriv_norm_sqr[j] += norm * norm;
+      }
+    }
+  }
+  for (size_t i = 0; i < eg_perturbed->io.size(); i++) {
+    NnetIo &io = eg_perturbed->io[i];
+    int32 node_index = nnet_->GetNodeIndex(io.name);
+    if (nnet_->IsInputNode(node_index)) {
+      CuMatrix<BaseFloat> input_deriv;
+      computer.GetOutputDestructive(io.name, &input_deriv);
+      int32 block_size = io.features.NumRows() / minibatch_size;
+      for (int32 j = 0; j < minibatch_size; j++) {
+        if (deriv_norm_sqr[j] != 0.0) {
+          BaseFloat scale = 1.0 / std::sqrt(deriv_norm_sqr[j]);
+          input_deriv.RowRange(j * block_size, block_size).Scale(scale);
+        }
+      }
+      CuMatrix<BaseFloat> cu_input(io.features.NumRows(), io.features.NumCols(),
+                                   kUndefined);
+      cu_input.CopyFromGeneralMat(io.features);
+      cu_input.AddMat(-config_.perturb_epsilon, input_deriv);
+      Matrix<BaseFloat> input(cu_input);
+      io.features.SwapFullMatrix(&input);
+    }
+  }
+}
+
 void NnetTrainer::ProcessOutputs(bool is_backstitch_step,
                                  const NnetExample &eg,
                                  NnetComputer *computer) {
@@ -152,6 +215,16 @@ void NnetTrainer::ProcessOutputs(bool is_backstitch_step,
                                       config_.print_interval,
                                       num_minibatches_processed_,
                                       tot_weight, tot_objf);
+      if (obj_type == kLinear) { // accuracy
+        const CuMatrixBase<BaseFloat> &output = computer->GetOutput(io.name);
+        BaseFloat tot_weight, tot_accuracy;
+        ComputeAccuracy(io.features, output,
+                        &tot_weight, &tot_accuracy);
+        accuracy_info_[io.name + suffix].UpdateStats(io.name + suffix,
+                                                     config_.print_interval,
+                                                     num_minibatches_processed_,
+                                                     tot_weight, tot_accuracy);
+      }
     }
   }
 }
@@ -165,6 +238,17 @@ bool NnetTrainer::PrintTotalStats() const {
     const std::string &name = iter->first;
     const ObjectiveFunctionInfo &info = iter->second;
     ans = ans || info.PrintTotalStats(name);
+  }
+  { // now print accuracies.
+    ans = false;
+    KALDI_LOG << "The following line is for accuracy.";
+    iter = accuracy_info_.begin();
+    end = accuracy_info_.end();
+    for (; iter != end; ++iter) {
+      const std::string &name = iter->first;
+      const ObjectiveFunctionInfo &info = iter->second;
+      ans = ans || info.PrintTotalStats(name);
+    }
   }
   PrintMaxChangeStats();
   return ans;
