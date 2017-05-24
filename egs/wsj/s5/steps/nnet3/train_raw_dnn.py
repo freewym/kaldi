@@ -367,7 +367,8 @@ def train(args, run_opts):
                 image_augmentation_opts=args.image_augmentation_opts,
                 use_multitask_egs=use_multitask_egs,
                 backstitch_training_scale=args.backstitch_training_scale,
-                backstitch_training_interval=args.backstitch_training_interval)
+                backstitch_training_interval=args.backstitch_training_interval,
+                backstitch_opts=args.backstitch_opts)
 
             if args.cleanup:
                 # do a clean up everything but the last 2 models, under certain

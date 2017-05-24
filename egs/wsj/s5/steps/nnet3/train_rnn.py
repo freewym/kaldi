@@ -420,6 +420,7 @@ def train(args, run_opts):
                 run_opts=run_opts,
                 backstitch_training_scale=args.backstitch_training_scale,
                 backstitch_training_interval=args.backstitch_training_interval,
+                backstitch_opts=args.backstitch_opts,
                 compute_per_dim_accuracy=args.compute_per_dim_accuracy)
 
             if args.cleanup:

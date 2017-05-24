@@ -906,6 +906,10 @@ class CommonParser(object):
                                  action=common_lib.StrToBoolAction,
                                  help="Compute train and validation "
                                  "accuracy per-dim")
+        self.parser.add_argument("--trainer.optimization.backstitch-opts",
+                                 type=str, dest='backstitch_opts',
+                                 default=None, help="""backstitch options on the
+                                 egs level.""")
 
         # General options
         self.parser.add_argument("--stage", type=int, default=-4,

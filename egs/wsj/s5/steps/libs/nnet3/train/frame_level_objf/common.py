@@ -29,6 +29,7 @@ def train_new_models(dir, iter, srand, num_jobs,
                      momentum, max_param_change,
                      shuffle_buffer_size, minibatch_size_str,
                      image_augmentation_opts,
+                     backstitch_opts,
                      run_opts, frames_per_eg=-1,
                      min_deriv_time=None, max_deriv_time_relative=None,
                      use_multitask_egs=False,
@@ -99,6 +100,12 @@ def train_new_models(dir, iter, srand, num_jobs,
         else:
             image_augmentation_cmd = ''
 
+        if backstitch_opts:
+            backstitch_cmd = (
+                'nnet3-copy-egs-backstitch {backstitch_opts} ark:- ark:-|'.format(
+                    backstitch_opts = backstitch_opts))
+        else:
+            backstitch_cmd = ''
 
         multitask_egs_opts = common_train_lib.get_multitask_egs_opts(
             egs_dir,
@@ -112,7 +119,7 @@ def train_new_models(dir, iter, srand, num_jobs,
             """ark,bg:nnet3-copy-egs {frame_opts} {multitask_egs_opts} \
             {scp_or_ark}:{egs_dir}/egs.{archive_index}.{scp_or_ark} ark:- | \
             nnet3-shuffle-egs --buffer-size={shuffle_buffer_size} \
-            --srand={srand} ark:- ark:- | {aug_cmd} \
+            --srand={srand} ark:- ark:- | {aug_cmd} {backstitch_cmd} \
             nnet3-merge-egs --minibatch-size={minibatch_size} ark:- ark:- |""".format(
                 frame_opts=("" if chunk_level_training
                             else "--frame={0}".format(frame)),
@@ -120,6 +127,7 @@ def train_new_models(dir, iter, srand, num_jobs,
                 shuffle_buffer_size=shuffle_buffer_size,
                 minibatch_size=minibatch_size_str,
                 aug_cmd=image_augmentation_cmd,
+                backstitch_cmd=backstitch_cmd,
                 srand=iter+srand,
                 scp_or_ark=scp_or_ark,
                 multitask_egs_opts=multitask_egs_opts))
@@ -163,6 +171,7 @@ def train_one_iteration(dir, iter, srand, egs_dir,
                         learning_rate, minibatch_size_str,
                         momentum, max_param_change, shuffle_buffer_size,
                         run_opts, image_augmentation_opts=None,
+                        backstitch_opts=None,
                         frames_per_eg=-1,
                         min_deriv_time=None, max_deriv_time_relative=None,
                         shrinkage_value=1.0, dropout_edit_string="",
@@ -274,7 +283,8 @@ def train_one_iteration(dir, iter, srand, egs_dir,
                      image_augmentation_opts=image_augmentation_opts,
                      use_multitask_egs=use_multitask_egs,
                      backstitch_training_scale=backstitch_training_scale,
-                     backstitch_training_interval=backstitch_training_interval)
+                     backstitch_training_interval=backstitch_training_interval,
+                     backstitch_opts=backstitch_opts)
 
     [models_to_average, best_model] = common_train_lib.get_successful_models(
          num_jobs, '{0}/log/train.{1}.%.log'.format(dir, iter))
