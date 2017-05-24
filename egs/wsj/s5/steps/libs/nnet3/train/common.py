@@ -791,6 +791,10 @@ class CommonParser:
                                  type=int, dest='backstitch_training_interval',
                                  default=1, help="""the interval of minibatches
                                  that backstitch training is applied on.""")
+        self.parser.add_argument("--trainer.optimization.backstitch-opts",
+                                 type=str, dest='backstitch_opts',
+                                 default=None, help="""backstitch options on the
+                                 egs level.""")
 
         # General options
         self.parser.add_argument("--stage", type=int, default=-4,

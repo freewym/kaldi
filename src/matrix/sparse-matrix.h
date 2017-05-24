@@ -87,6 +87,9 @@ class SparseVector {
   /// distributed.  Useful in testing.
   void SetRandn(BaseFloat zero_prob);
 
+  /// Scales elements
+  void Scale(BaseFloat alpha);
+
   SparseVector(): dim_(0) { }
 
   explicit SparseVector(MatrixIndexT dim): dim_(dim) { KALDI_ASSERT(dim >= 0); }
@@ -195,6 +198,9 @@ class SparseMatrix {
   /// kUndefined behaves the same as kSetZero.
   void Resize(MatrixIndexT rows, MatrixIndexT cols,
               MatrixResizeType resize_type = kSetZero);
+
+  /// Scales the matrix
+  void Scale(BaseFloat alpha);
 
   // Use the Matrix::CopyFromSmat() function to copy from this to Matrix.  Also
   // see Matrix::AddSmat().  There is not very extensive functionality for

@@ -30,6 +30,7 @@ def train_new_models(dir, iter, srand, num_jobs,
                      max_param_change,
                      shuffle_buffer_size, minibatch_size_str,
                      image_augmentation_opts,
+                     backstitch_opts,
                      run_opts, frames_per_eg=-1,
                      min_deriv_time=None, max_deriv_time_relative=None):
     """ Called from train_one_iteration(), this model does one iteration of
@@ -93,6 +94,13 @@ def train_new_models(dir, iter, srand, num_jobs,
         else:
             image_augmentation_cmd = ''
 
+        if backstitch_opts:
+            backstitch_cmd = (
+                'nnet3-copy-egs-backstitch {backstitch_opts} ark:- ark:-|'.format(
+                    backstitch_opts = backstitch_opts))
+        else:
+            backstitch_cmd = ''
+
         # note: the thread waits on that process's completion.
         thread = common_lib.background_command(
             """{command} {train_queue_opt} {dir}/log/train.{iter}.{job}.log \
@@ -106,7 +114,7 @@ def train_new_models(dir, iter, srand, num_jobs,
                     "ark,bg:nnet3-copy-egs {frame_opts} """
             """ark:{egs_dir}/egs.{archive_index}.ark ark:- |"""
             """nnet3-shuffle-egs --buffer-size={shuffle_buffer_size} """
-            """--srand={srand} ark:- ark:- | {aug_cmd} """
+            """--srand={srand} ark:- ark:- | {aug_cmd} {backstitch_cmd} """
             """nnet3-merge-egs --minibatch-size={minibatch_size_str} """
             """ ark:- ark:- |" {dir}/{next_iter}.{job}.raw""".format(
                         command=run_opts.command,
@@ -129,7 +137,8 @@ def train_new_models(dir, iter, srand, num_jobs,
                         egs_dir=egs_dir, archive_index=archive_index,
                         shuffle_buffer_size=shuffle_buffer_size,
                         minibatch_size_str=minibatch_size_str,
-                        aug_cmd=image_augmentation_cmd),
+                        aug_cmd=image_augmentation_cmd,
+                        backstitch_cmd=backstitch_cmd),
             require_zero_status=True)
 
         threads.append(thread)
@@ -145,6 +154,7 @@ def train_one_iteration(dir, iter, srand, egs_dir,
                         backstitch_training_scale, backstitch_training_interval,
                         max_param_change, shuffle_buffer_size,
                         run_opts, image_augmentation_opts=None,
+                        backstitch_opts=None,
                         frames_per_eg=-1,
                         min_deriv_time=None, max_deriv_time_relative=None,
                         shrinkage_value=1.0, dropout_edit_string="",
@@ -249,7 +259,8 @@ def train_one_iteration(dir, iter, srand, egs_dir,
                      frames_per_eg=frames_per_eg,
                      min_deriv_time=min_deriv_time,
                      max_deriv_time_relative=max_deriv_time_relative,
-                     image_augmentation_opts=image_augmentation_opts)
+                     image_augmentation_opts=image_augmentation_opts,
+                     backstitch_opts=backstitch_opts)
 
     [models_to_average, best_model] = common_train_lib.get_successful_models(
          num_jobs, '{0}/log/train.{1}.%.log'.format(dir, iter))

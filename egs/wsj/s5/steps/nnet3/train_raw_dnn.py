@@ -367,7 +367,8 @@ def train(args, run_opts):
                 shuffle_buffer_size=args.shuffle_buffer_size,
                 run_opts=run_opts,
                 get_raw_nnet_from_am=False,
-                image_augmentation_opts=args.image_augmentation_opts)
+                image_augmentation_opts=args.image_augmentation_opts,
+                backstitch_opts=args.backstitch_opts)
 
             if args.cleanup:
                 # do a clean up everythin but the last 2 models, under certain

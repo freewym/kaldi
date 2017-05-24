@@ -270,6 +270,13 @@ void SparseVector<Real>::SetRandn(BaseFloat zero_prob) {
 }
 
 template <typename Real>
+void SparseVector<Real>::Scale(BaseFloat alpha) {
+  for (int32 i = 0; i < pairs_.size(); i++) {
+    pairs_[i].second *= alpha;
+  }
+}
+
+template <typename Real>
 void SparseVector<Real>::Resize(MatrixIndexT dim,
                                 MatrixResizeType resize_type) {
   if (resize_type != kCopyData || dim == 0)
@@ -546,6 +553,13 @@ SparseMatrix<Real>::SparseMatrix(
   for (MatrixIndexT row = 0; row < num_rows; row++) {
     SparseVector<Real> svec(dim, pairs[row]);
     rows_[row].Swap(&svec);
+  }
+}
+
+template <typename Real>
+void SparseMatrix<Real>::Scale(BaseFloat alpha) {
+  for (int32 i = 0; i < rows_.size(); i++) {
+    rows_[i].Scale(alpha);
   }
 }
 
