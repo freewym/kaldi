@@ -84,10 +84,10 @@ static bool VectorIsContiguous(const std::vector<int32> &vec) {
 }
 
 
-std::string ConvolutionModel::Info() const {
+std::string ConvolutionModel::Info(int32 num_blocks) const {
   std::ostringstream os;
-  os << "num-filters-in=" << num_filters_in
-     << ", num-filters-out=" << num_filters_out
+  os << "num-filters-in=" << (num_filters_in * num_blocks)
+     << ", num-filters-out=" << (num_filters_out * num_blocks)
      << ", height-in=" << height_in
      << ", height-out=" << height_out
      << ", height-subsample-out=" << height_subsample_out

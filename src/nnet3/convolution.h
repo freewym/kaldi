@@ -229,7 +229,10 @@ struct ConvolutionModel {
   // Returns an info-string that describes the model; it looks like
   // "num-filters-in=32, num-filters-out=64, height-in=40, height-out=40, ... ".
   // It's suitable for use in the 'info' output of the convolutional component.
-  std::string Info() const;
+  //
+  // The printed num-filters-in and num-filters-out will be the
+  // actual num_filters_in and num_filters_out multiplied by num_blocks.
+  std::string Info(int32 num_blocks = 1) const;
 
   void Write(std::ostream &os, bool binary) const;
   void Read(std::istream &is, bool binary);

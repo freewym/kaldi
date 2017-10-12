@@ -323,8 +323,8 @@ class TimeHeightConvolutionComponent: public UpdatableComponent {
 
   time_height_convolution::ConvolutionModel model_;
 
-  // all_time_offsets_ is a copy of the corresponding variable in
-  // model, stored as a vector instead of as a set for efficiency.
+  // all_time_offsets_ is a copy of the corresponding variable in the model,
+  // stored as a vector instead of as a set for efficiency.
   std::vector<int32> all_time_offsets_;
   // time_offset_required_ is a vector with the same dimension as
   // 'all_time_offsets_', which is true if the corresponding time-offset
@@ -371,7 +371,209 @@ class TimeHeightConvolutionComponent: public UpdatableComponent {
   OnlineNaturalGradient preconditioner_out_;
 };
 
+/**
+   BlockTimeHeightConvolutionComponent is the same as
+   TimeHeightConvolutionComponent, except that it supports the
+   num-blocks configuration value, documented as folflows:
+     num-blocks      This value (which should be >= 1 and will normally
+                     be > 1), must divide num-filters-in and num-filters-out.
+                     For instance, if num-blocks=4 then the input and output
+                     filters will be divided into 4 equal-sized blocks,
+                     and the convolution is done in such a way that
+                     each filter only gets input from other filters that
+                     are part of the same block.  So the number of
+                     parameters in this example would be 1/4 as large as
+                     the number of parameters in the equivalent
+                     TimeHeightConvolutionComponent.  We actually implement
+                     this as 4 separate convolutions all with the same
+                     structure.
+ */
+class BlockTimeHeightConvolutionComponent: public UpdatableComponent {
+ public:
 
+  // The use of this constructor should only precede InitFromConfig()
+  BlockTimeHeightConvolutionComponent();
+
+  // Copy constructor
+  BlockTimeHeightConvolutionComponent(const BlockTimeHeightConvolutionComponent &other);
+
+  virtual int32 InputDim() const;
+  virtual int32 OutputDim() const;
+
+  virtual std::string Info() const;
+  virtual void InitFromConfig(ConfigLine *cfl);
+  virtual std::string Type() const { return "BlockTimeHeightConvolutionComponent"; }
+  virtual int32 Properties() const {
+    return kUpdatableComponent|kLinearInParameters|
+        kReordersIndexes|kBackpropNeedsInput|
+        kInputContiguous|kOutputContiguous;
+  }
+  virtual void* Propagate(const ComponentPrecomputedIndexes *indexes,
+                         const CuMatrixBase<BaseFloat> &in,
+                         CuMatrixBase<BaseFloat> *out) const;
+  virtual void Backprop(const std::string &debug_info,
+                        const ComponentPrecomputedIndexes *indexes,
+                        const CuMatrixBase<BaseFloat> &in_value,
+                        const CuMatrixBase<BaseFloat> &out_value,
+                        const CuMatrixBase<BaseFloat> &out_deriv,
+                        void *memo,
+                        Component *to_update,
+                        CuMatrixBase<BaseFloat> *in_deriv) const;
+  // This ReorderIndexes function may insert 'blank' indexes (indexes with
+  // t == kNoTime) as well as reordering the indexes.  This is allowed
+  // behavior of ReorderIndexes functions.
+  virtual void ReorderIndexes(std::vector<Index> *input_indexes,
+                              std::vector<Index> *output_indexes) const;
+
+
+  virtual void Read(std::istream &is, bool binary);
+  virtual void Write(std::ostream &os, bool binary) const;
+  virtual Component* Copy() const {
+    return new BlockTimeHeightConvolutionComponent(*this);
+  }
+
+
+  // Some functions that are only to be reimplemented for GeneralComponents.
+  virtual void GetInputIndexes(const MiscComputationInfo &misc_info,
+                               const Index &output_index,
+                               std::vector<Index> *desired_indexes) const;
+
+  // This function returns true if at least one of the input indexes used to
+  // compute this output index is computable.
+  virtual bool IsComputable(const MiscComputationInfo &misc_info,
+                            const Index &output_index,
+                            const IndexSet &input_index_set,
+                            std::vector<Index> *used_inputs) const;
+
+  typedef TimeHeightConvolutionComponent::PrecomputedIndexes
+     PrecomputedIndexes;
+
+  virtual ComponentPrecomputedIndexes* PrecomputeIndexes(
+      const MiscComputationInfo &misc_info,
+      const std::vector<Index> &input_indexes,
+      const std::vector<Index> &output_indexes,
+      bool need_backprop) const;
+
+  // Some functions from base-class UpdatableComponent.
+  virtual void Scale(BaseFloat scale);
+  virtual void Add(BaseFloat alpha, const Component &other);
+  virtual void PerturbParams(BaseFloat stddev);
+  virtual BaseFloat DotProduct(const UpdatableComponent &other) const;
+  virtual int32 NumParameters() const;
+  virtual void Vectorize(VectorBase<BaseFloat> *params) const;
+  virtual void UnVectorize(const VectorBase<BaseFloat> &params);
+
+
+ private:
+
+  void Check();
+
+  // computes derived parameters required_time_offsets_ and all_time_offsets_.
+  void ComputeDerived();
+
+  // Function that updates linear_params_ and bias_params_, which
+  // uses the natural gradient code.
+  void UpdateNaturalGradient(
+      const PrecomputedIndexes &indexes,
+      const CuMatrixBase<BaseFloat> &in_value,
+      const CuMatrixBase<BaseFloat> &out_deriv);
+
+  // Function that updates linear_params_ and bias_params_, which
+  // does not use the natural gradient code.
+  void UpdateSimple(
+      const PrecomputedIndexes &indexes,
+      const CuMatrixBase<BaseFloat> &in_value,
+      const CuMatrixBase<BaseFloat> &out_deriv);
+
+
+  // This function copies one block of filters,
+  // identified by 0 <= block < num_blocks_, from the
+  // input 'all_blocks' to 'one_block'.  The column-dimension
+  // of 'all_blocks' is expected to be a multiple of
+  // (some height h) by (num_blocks_ * filters_per_block),
+  // with h, num_blocks_ and model_.num_filters listed in
+  // order of greatest to least stride.  This function
+  // extracts the block numbered 'block', and copies it
+  // to 'out_block'
+  void CopyToBlock(const CuMatrixBase<BaseFloat> &all_blocks,
+                   int32 filters_per_block,
+                   int32 block,
+                   CuMatrixBase<BaseFloat> *one_block) const;
+
+  // This is the like CopyToBlock, except in the reverse
+  // direction.
+  void CopyFromBlock(const CuMatrixBase<BaseFloat> &one_block,
+                     int32 filters_per_block,
+                     int32 block,
+                     CuMatrixBase<BaseFloat> *all_blocks) const;
+
+  // This is the like CopyToBlock, except in the reverse
+  // direction, and it adds instead of copies.
+  void AddFromBlock(const CuMatrixBase<BaseFloat> &one_block,
+                    int32 filters_per_block,
+                    int32 block,
+                    CuMatrixBase<BaseFloat> *all_blocks) const;
+
+
+  // we require num_blocks_ >= 1; num_blocks_ == 1 doesn't
+  // makes sense (you should use TimeHeightConvolutionComponent), but
+  // is supported for testing purposes.
+  int32 num_blocks_;
+
+  // This model expresses the structure for ONE BLOCK of the computation.  Its
+  // num_filters_in and num_filters_out are not the same as those that appear in
+  // the config line and the Info() string; the ones in the config line and the
+  // Info() string are larger by a factor of 'num_blocks'.
+  time_height_convolution::ConvolutionModel model_;
+
+  // The derived quantity all_time_offsets_ is a copy of the corresponding
+  // variable in the model, stored as a vector instead of as a set for
+  // efficiency.
+  std::vector<int32> all_time_offsets_;
+  // The derived quantity time_offset_required_ is a vector with the same
+  // dimension as 'all_time_offsets_', which is true if the corresponding
+  // time-offset is a member of model_.required_time_offsets_.
+  std::vector<bool> time_offset_required_;
+
+  // The linear parameters of the convolution, in num_blocks_ blocks of
+  // rows.  Each block has dimension model_.ParamRows() by model.ParamCols(),
+  // so the total num-rows is num_blocks_ * model_.ParamRows().
+  CuMatrix<BaseFloat> linear_params_;
+
+  // the bias parameters of the convolution; the dimension is the number of
+  // output-filters, which equals num_blocks_ * model_.num_filters_out.
+  CuVector<BaseFloat> bias_params_;
+
+
+  // Maximum amount of temporary memory in megabytes that is allowed to be used
+  // in the convolution computation.  (this is per computation, but it's
+  // released immediately after it's used, so it doesn't matter how many there
+  // are).
+  BaseFloat max_memory_mb_;
+
+  // Controls whether or not the natural-gradient is used.
+  // Note: even if this is true, if is_gradient_ (from the
+  // UpdatableComponent base class) is true, we'll do the 'simple'
+  // update that doesn't include natural gradient.
+  bool use_natural_gradient_;
+
+  // Apart from use_natural_gradient_, this is the only natural-gradient
+  // config-line configuration variable that we store directly; the others are
+  // stored inside the preconditioner_in_ and preconditioner_out_ objects.
+  BaseFloat num_minibatches_history_;
+
+  // Preconditioner for the input space; if we are using natural
+  // gradient its size will be num_blocks(), and each preconditioner
+  // will operate on  dimension linear_params_.NumCols() +
+  // 1 (the 1 is for the bias).  As with other natural-gradient objects, it's
+  // not stored with the model on disk but is reinitialized each time we start
+  // up.
+  std::vector<OnlineNaturalGradient> preconditioner_in_;
+
+  // Preconditioners for the output space, one per block.  Each preconditioner
+  // operates on dimension linear_params_.NumRows() / num_blocks_.
+  std::vector<OnlineNaturalGradient> preconditioner_out_;
+};
 
 
 } // namespace nnet3

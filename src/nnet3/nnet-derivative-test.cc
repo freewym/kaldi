@@ -110,6 +110,8 @@ void UnitTestNnetModelDerivatives() {
     ComputationRequest request;
     std::vector<Matrix<BaseFloat> > inputs;
     ComputeExampleComputationRequestSimple(nnet, &request, &inputs);
+    int32 num_n_values = 1 + request.inputs[0].indexes.back().n -
+        request.inputs[0].indexes.front().n;
 
     // make sure that a model-derivative is requested, and an output-derivative
     // is supplied.
@@ -140,7 +142,7 @@ void UnitTestNnetModelDerivatives() {
     SetNnetAsGradient(&nnet_deriv);     // forces "simple" update and unit
                                         // learning rate.
 
-    int32 num_directions = 4;  // must be >= 1.  Best if it's >1, will reduce
+    int32 num_directions = 3;  // must be >= 1.  Best if it's >1, will reduce
                                // the probability of random failures.
 
     // the order of these vectors is:
@@ -225,10 +227,11 @@ void UnitTestNnetModelDerivatives() {
     } else {
       if (!ApproxEqual(predicted_objf_change_vec,
                        measured_objf_change_vec, delta_thresh_fail)) {
-        if (NnetIsRecurrent(nnet)) {
+        if (NnetIsRecurrent(nnet) || num_n_values < 3) {
           KALDI_WARN << "Predicted and measured objf-changes differ too much. "
-                     << "(would normally be beyond error threshold, but this "
-                     << "nnet is recurrent, so letting it pass.";
+                     << "(would normally be beyond error thresholdi), but this "
+                     << "nnet is recurrent, or number of examples used ("
+                     << num_n_values << ") so letting it pass.";
         } else {
           KALDI_ERR << "Predicted and measured objf-changes differ too much.";
         }
@@ -264,6 +267,8 @@ void UnitTestNnetInputDerivatives() {
     ComputationRequest request;
     std::vector<Matrix<BaseFloat> > inputs;
     ComputeExampleComputationRequestSimple(nnet, &request, &inputs);
+    int32 num_n_values = 1 + request.inputs[0].indexes.back().n -
+        request.inputs[0].indexes.front().n;
 
     // make sure that all inputs and outputs have derivatives requested/provided,
     // and that the model-update (need_model_derivative) is not requested.
@@ -305,7 +310,7 @@ void UnitTestNnetInputDerivatives() {
     computation.ComputeCudaIndexes();
 
 
-    int32 num_directions = 3;  // must be >= 1.  Best if it's >1, will reduce
+    int32 num_directions = 4;  // must be >= 1.  Best if it's >1, will reduce
                                // the probability of random failures.
 
     // the order of these vectors is:
@@ -400,10 +405,11 @@ void UnitTestNnetInputDerivatives() {
      BaseFloat delta_thresh_warn = 0.05, delta_thresh_fail = 0.25;
     if (!ApproxEqual(predicted_objf_change_vec,
                      measured_objf_change_vec, delta_thresh_fail)) {
-      if (NnetIsRecurrent(nnet)) {
+      if (NnetIsRecurrent(nnet) || num_n_values < 3) {
         KALDI_WARN << "Predicted and measured objf-changes differ too much. "
-                   << "(would normally be beyond error threshold, but this "
-                   << "nnet is recurrent, so letting it pass.";
+                   << "(would normally be beyond error threshold), but this "
+                   << "nnet is recurrent, or number of examples used ("
+                   << num_n_values << ") is small, so letting it pass.";
       } else {
         KALDI_ERR << "Predicted and measured objf-changes differ too much.";
       }

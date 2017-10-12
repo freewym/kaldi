@@ -999,13 +999,30 @@ void GenerateConfigSequenceCnnNew(
       required_time_offsets = (RandInt(0, 1) == 0 ? "" : "0");
     }
 
-    ss << "component type=TimeHeightConvolutionComponent name=layer" << l << "-conv "
+    if (RandInt(0, 1) == 0) {
+      ss << "component type=TimeHeightConvolutionComponent";
+    } else {
+      int32 num_blocks = 1;
+      if (cur_num_filt % 2 == 0 && next_num_filt % 2 == 0 &&
+          RandInt(0, 3) != 0) {
+        num_blocks = 2;
+      } else if (cur_num_filt % 3 == 0 && next_num_filt % 3 == 0 &&
+                 RandInt(0, 3) != 0) {
+        num_blocks = 3;
+      }
+      KALDI_LOG << "num-blocks is " << num_blocks;
+
+      ss << "component type=BlockTimeHeightConvolutionComponent num-blocks="
+         << num_blocks;
+    }
+    ss << " name=layer" << l << "-conv "
        << "num-filters-in=" << cur_num_filt
        << " num-filters-out=" << next_num_filt
        << " height-in=" << cur_height
        << " height-out=" << next_height
        << " height-offsets=" << (height_padding ? "-1,0,1" : "0,1,2")
-       << " time-offsets=" << time_offsets;
+       << " time-offsets=" << time_offsets
+       << " bias-stddev=" << (RandInt(0,1) * 0.5);
 
     if (RandInt(0, 1) == 0) {
       // this limits the 'temp memory' usage to 100

@@ -98,6 +98,14 @@ from libs.nnet3.xconfig.basic_layers import XconfigLayerBase
 #                            ReLUs into the appropriate range in cases where
 #                            the unit is active either too little of the time
 #                            (<10%) or too much of the time (>90%).
+#   num-blocks=1             This value, if specified, must divide the
+#                            num-filters-in and num-filters-out.  It divides the
+#                            filters up into blocks such that, the 1st
+#                            output block of filters only 'sees' the 1st
+#                            input block of filters, the 2nd only sees the 2nd,
+#                            and so on.  The number of parameters in the layer
+#                            is proportional to 1/num-blocks.
+#
 #
 # The following initialization and natural-gradient related options are, if
 # provided, passed through to the config file; if not, they are left at the
@@ -126,6 +134,7 @@ class XconfigConvLayer(XconfigLayerBase):
                        'required-time-offsets':'',
                        'target-rms':1.0,
                        'self-repair-scale': 2.0e-05,
+                       'num-blocks': 1,
                        # the following are not really inspected by this level of
                        # code, just passed through (but not if left at '').
                        'param-stddev':'', 'bias-stddev':'',
@@ -202,6 +211,14 @@ class XconfigConvLayer(XconfigLayerBase):
             raise RuntimeError("Config value target-rms={0} is not valid".format(
                 self.config['target_rms']))
 
+        num_blocks = self.config['num-blocks']
+        if num_blocks < 1:
+            raise RuntimeError("num-blocks < 1 is not allowed.")
+        elif (self.config['num-filters-in'] % num_blocks != 0 or \
+             self.config['num-filters-out'] % num_blocks != 0):
+            raise RuntimeError("num-blocks must divide num-filters-in and "
+                               "num-filters-out")
+
     def auxiliary_outputs(self):
         return []
 
@@ -236,6 +253,7 @@ class XconfigConvLayer(XconfigLayerBase):
         configs = []
 
         name = self.name
+        num_blocks = self.config['num-blocks']   # will normally be 1.
 
         # These 3 variables will be updated as we add components.
         cur_num_filters = self.config['num-filters-in']
@@ -264,8 +282,13 @@ class XconfigConvLayer(XconfigLayerBase):
                         a.append('{0}={1}'.format(opt_name, value))
                 conv_opts = ' '.join(a)
 
-                configs.append('component name={0}.conv type=TimeHeightConvolutionComponent '
-                               '{1}'.format(name, conv_opts))
+                if num_blocks == 1:
+                    configs.append('component name={0}.conv type=TimeHeightConvolutionComponent '
+                                   '{1}'.format(name, conv_opts))
+                else:
+                    configs.append('component name={0}.conv type=BlockTimeHeightConvolutionComponent '
+                                   'num-blocks={1} {2}'.format(name, num_blocks, conv_opts))
+
                 configs.append('component-node name={0}.conv component={0}.conv '
                                'input={1}'.format(name, cur_descriptor))
                 cur_num_filters = self.config['num-filters-out']
@@ -395,6 +418,7 @@ class XconfigResBlock(XconfigLayerBase):
                        'height':-1,
                        'num-filters':-1,
                        'num-bottleneck-filters':-1,
+                       'num-blocks': 1,
                        'time-period':1,
                        'self-repair-scale': 2.0e-05,
                        'max-change': 0.75,
@@ -436,6 +460,13 @@ class XconfigResBlock(XconfigLayerBase):
                                "be input, relu or batchnorm, got: {1}".format(
                                    self.config['direct-convolution-source']))
 
+        num_blocks = self.config['num-blocks']
+        if num_blocks < 1:
+            raise RuntimeError("num-blocks < 1 is not allowed.")
+        elif (self.config['num-bottleneck-filters'] % num_blocks != 0):
+            raise RuntimeError("num-blocks must divide num-bottleneck-filters")
+
+
     def auxiliary_outputs(self):
         return []
 
@@ -465,10 +496,13 @@ class XconfigResBlock(XconfigLayerBase):
     def get_full_config(self):
         ans = []
         b = self.config['num-bottleneck-filters']
+        num_blocks = self.config['num-blocks']
         if b <= 0:
             config_lines = self.generate_normal_resblock_config()
-        else:
+        elif num_blocks == 1:
             config_lines = self.generate_bottleneck_resblock_config()
+        else:
+            config_lines = self.generate_group_bottleneck_resblock_config()
 
         for line in config_lines:
             for config_name in ['ref', 'final']:
@@ -670,6 +704,112 @@ class XconfigResBlock(XconfigLayerBase):
         # descriptor corresponding to the output of the network.
         return configs
 
+
+    # generate_group_bottleneck_resblock_config is a convenience function to
+    # generate the res-block config (this is the bottleneck version with group
+    # convolution at the bottleneck layer, where there is a 3x3 kernel with a
+    # group of smaller number of filters than at the input and output,
+    # sandwiched between two 1x1 kernels.
+    #
+    # The main path inside the res-block in the bottleneck case is as follows:
+    #
+    # input -> relu1 -> batchnorm1 -> conv1 -> relu2 -> batchnorm2 ->
+    #   group-conv2 -> relu3 -> batchnorm3 -> conv3
+    #
+    # power.
+    #
+    # The output of the res-block can be the sum of the last convolutional
+    # component (conv3), with the input.  However we give the option
+    # ('bypass-source') to sum with the raw input, or its relu or
+    # relu+batchnorm.  If the term is going to be the raw input, we give the
+    # option ('noop') and to cache the output sum via a NoOpComponent)-- because
+    # due to how nnet3 works, if we didn't do this, redundant summing operations
+    # would take place.
+    def generate_group_bottleneck_resblock_config(self):
+        configs = []
+
+        name = self.name
+        num_filters = self.config['num-filters']
+        num_bottleneck_filters = self.config['num-bottleneck-filters']
+        assert num_bottleneck_filters > 0
+        num_blocks = self.config['num-blocks']
+        height = self.config['height']
+        input_descriptor = self.descriptors['input']['final-string']
+        allow_zero_padding = self.config['allow-zero-padding']
+        time_period = self.config['time-period']
+
+        # input -> relu1 -> batchnorm1 -> conv1 -> relu2 -> batchnorm2 -> conv2
+        cur_descriptor = input_descriptor
+        cur_num_filters = num_filters
+
+        for n in [1, 2, 3]:
+            # the ReLU
+            configs.append('component name={0}.relu{1} type=RectifiedLinearComponent '
+                           'dim={2} self-repair-scale={3}'.format(
+                               name, n, cur_num_filters * height,
+                               self.config['self-repair-scale']))
+            configs.append('component-node name={0}.relu{1} component={0}.relu{1} '
+                           'input={2}'.format(name, n, cur_descriptor))
+
+            cur_descriptor = '{0}.relu{1}'.format(name, n)
+
+            # the batch-norm
+            configs.append('component name={0}.batchnorm{1}  type=BatchNormComponent dim={2} '
+                               'block-dim={3}'.format(
+                                   name, n, cur_num_filters * height,
+                                   cur_num_filters))
+            configs.append('component-node name={0}.batchnorm{1} component={0}.batchnorm{1} '
+                           'input={2}'.format(name, n, cur_descriptor))
+            cur_descriptor = '{0}.batchnorm{1}'.format(name, n)
+
+
+            # the convolution.
+            a = []
+            for opt_name in [
+                    'param-stddev', 'bias-stddev', 'use-natural-gradient',
+                    'max-change', 'rank-in', 'rank-out', 'num-minibatches-history',
+                    'alpha-in', 'alpha-out' ]:
+                value = self.config[opt_name]
+                if value != '':
+                        a.append('{0}={1}'.format(opt_name, value))
+
+            height_offsets = ('-1,0,1' if n == 2 else '0')
+            time_offsets = ('-{t},0,{t}'.format(t=time_period) if n == 2 else '0')
+            num_filters_in = cur_num_filters
+            num_filters_out = (num_filters if n == 3 else num_bottleneck_filters)
+            cur_num_filters = num_filters_out
+
+            conv_opts = ('height-in={h} height-out={h} height-offsets={ho} time-offsets={to} '
+                         'num-filters-in={fi} num-filters-out={fo} {r} {o}'.format(
+                             h=height, ho=height_offsets, to=time_offsets,
+                             fi=num_filters_in, fo=num_filters_out,
+                             r=('required-time-offsets=0' if allow_zero_padding else ''),
+                             o=' '.join(a)))
+
+            if n != 2 or num_blocks == 1:
+                configs.append('component name={0}.conv{1} type=TimeHeightConvolutionComponent '
+                               '{2}'.format(name, n, conv_opts))
+            else:
+                configs.append('component name={0}.conv{1} type=BlockTimeHeightConvolutionComponent '
+                               'num-blocks={2} {3}'.format(name, n, num_blocks, conv_opts))
+
+            configs.append('component-node name={0}.conv{1} component={0}.conv{1} '
+                           'input={2}'.format(name, n, cur_descriptor))
+            cur_descriptor = '{0}.conv{1}'.format(name, n)
+
+
+
+        if self.config['bypass-source'] == 'noop':
+            dim = self.descriptors['input']['dim']
+            configs.append('component name={0}.noop dim={1} type=NoOpComponent'.format(
+                name, dim))
+            configs.append('component-node name={0}.noop component={0}.noop '
+                           'input=Sum({1}, {0}.conv3)'.format(name,
+                                                              input_descriptor))
+
+        # Note: the function 'output_name' is responsible for returning the
+        # descriptor corresponding to the output of the network.
+        return configs
 
 # This layer just maps to a single component, a SumBlockComponent.  It's for
 # doing channel averaging at the end of neural networks.  See scripts for
