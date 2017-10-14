@@ -147,6 +147,59 @@ class DropoutComponent : public RandomComponent {
   bool dropout_per_frame_;
 };
 
+// This component divides input dimension into two equal range, scale the first
+// block by (1 + r) and the second by (1 - r), where r is drawn per minibatch
+// from [-random_scale, random_scale].
+// Typically this component used during training but not in test time.
+class ShakeComponent : public RandomComponent {
+ public:
+  void Init(int32 dim, BaseFloat random_scale = 0.2);
+
+  ShakeComponent(int32 dim, BaseFloat random_scale = 0.2) {
+    Init(dim, random_scale);
+  }
+
+  ShakeComponent(): dim_(0), random_scale_(0.2) { }
+
+  ShakeComponent(const ShakeComponent &other);
+
+  virtual int32 Properties() const {
+    return kLinearInInput|kBackpropInPlace|kSimpleComponent|kRandomComponent;
+  }
+  virtual std::string Type() const { return "ShakeComponent"; }
+
+  virtual void InitFromConfig(ConfigLine *cfl);
+
+  virtual int32 InputDim() const { return dim_; }
+
+  virtual int32 OutputDim() const { return dim_; }
+
+  virtual void Read(std::istream &is, bool binary);
+
+  // Write component to stream
+  virtual void Write(std::ostream &os, bool binary) const;
+
+  virtual void* Propagate(const ComponentPrecomputedIndexes *indexes,
+                         const CuMatrixBase<BaseFloat> &in,
+                         CuMatrixBase<BaseFloat> *out) const;
+  virtual void Backprop(const std::string &debug_info,
+                        const ComponentPrecomputedIndexes *indexes,
+                        const CuMatrixBase<BaseFloat> &in_value,
+                        const CuMatrixBase<BaseFloat> &out_value,
+                        const CuMatrixBase<BaseFloat> &out_deriv,
+                        void *memo,
+                        Component *to_update,
+                        CuMatrixBase<BaseFloat> *in_deriv) const;
+
+  virtual Component* Copy() const;
+
+  virtual std::string Info() const;
+ private:
+  int32 dim_;
+  /// shake value r is drawn from [-random-scale, random-scale].
+  BaseFloat random_scale_;
+};
+
 class ElementwiseProductComponent: public Component {
  public:
   void Init(int32 input_dim, int32 output_dim);

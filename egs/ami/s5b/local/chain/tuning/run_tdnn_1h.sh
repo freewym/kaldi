@@ -188,7 +188,7 @@ if [ $stage -le 15 ]; then
   relu-batchnorm-layer name=tdnn6 input=Append(-3,0,3) dim=450
   relu-batchnorm-layer name=tdnn7 input=Append(-3,0,3) dim=450
   relu-batchnorm-layer name=tdnn8 input=Append(-3,0,3) dim=450
-  relu-batchnorm-layer name=tdnn9 input=Append(-3,0,3) dim=450
+  relu-batchnorm-shake-layer name=tdnn9 input=Append(-3,0,3) dim=450 shake-random-scale=0.5
 
   ## adding the layers for chain branch
   relu-batchnorm-layer name=prefinal-chain input=tdnn9 dim=450 target-rms=0.5

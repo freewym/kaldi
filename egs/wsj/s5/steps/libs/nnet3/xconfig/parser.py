@@ -25,6 +25,7 @@ config_to_layer = {
         'relu-batchnorm-dropout-layer' : xlayers.XconfigBasicLayer,
         'relu-dropout-layer': xlayers.XconfigBasicLayer,
         'relu-batchnorm-layer' : xlayers.XconfigBasicLayer,
+        'relu-batchnorm-shake-layer' : xlayers.XconfigBasicLayer,
         'sigmoid-layer' : xlayers.XconfigBasicLayer,
         'tanh-layer' : xlayers.XconfigBasicLayer,
         'fixed-affine-layer' : xlayers.XconfigFixedAffineLayer,

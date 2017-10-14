@@ -645,6 +645,7 @@ class XconfigBasicLayer(XconfigLayerBase):
         # combinations you want to use, to this list.
         assert first_token in ['relu-layer', 'relu-renorm-layer', 'sigmoid-layer',
                                'tanh-layer', 'relu-batchnorm-layer', 'relu-dropout-layer',
+                               'relu-batchnorm-shake-layer',
                                'relu-batchnorm-dropout-layer']
         XconfigLayerBase.__init__(self, first_token, key_to_value, prev_names)
 
@@ -662,6 +663,9 @@ class XconfigBasicLayer(XconfigLayerBase):
                        'dropout-proportion': 0.5,  # dropout-proportion only
                                                    # affects layers with
                                                    # 'dropout' in the name.
+                       'shake-random-scale': 0.2,  # shake-random-scale only
+                                                   # affects layers with
+                                                   # 'shake' in the name.
                        'add-log-stddev': False}
 
     def check_configs(self):
@@ -676,6 +680,9 @@ class XconfigBasicLayer(XconfigLayerBase):
         if self.config['learning-rate-factor'] <= 0.0:
             raise RuntimeError("learning-rate-factor has invalid value {0}"
                                .format(self.config['learning-rate-factor']))
+        if self.config['shake-random-scale'] <= 0.0:
+            raise RuntimeError("shake-random-scale has invalid value {0}"
+                               .format(self.config['shake-random-scale']))
 
     def output_name(self, auxiliary_output=None):
         # at a later stage we might want to expose even the pre-nonlinearity
@@ -806,6 +813,12 @@ class XconfigBasicLayer(XconfigLayerBase):
                         'dim={2} dropout-proportion={3}'.format(
                             self.name, nonlinearity, output_dim,
                             self.config['dropout-proportion']))
+
+            elif nonlinearity == 'shake':
+                line = ('component name={0}.{1} type=ShakeComponent '
+                        'dim={2} random-scale={3}'.format(
+                            self.name, nonlinearity, output_dim,
+                            self.config['shake-random-scale']))
 
             else:
                 raise RuntimeError("Unknown nonlinearity type: {0}"

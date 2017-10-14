@@ -231,6 +231,116 @@ void DropoutComponent::Write(std::ostream &os, bool binary) const {
   WriteToken(os, binary, "</DropoutComponent>");
 }
 
+ShakeComponent::ShakeComponent(const ShakeComponent &other):
+    RandomComponent(other),
+    dim_(other.dim_),
+    random_scale_(other.random_scale_) { }
+
+Component* ShakeComponent::Copy() const {
+  ShakeComponent *ans = new ShakeComponent(*this);
+  return ans;
+}
+
+void ShakeComponent::Init(int32 dim, BaseFloat random_scale) {
+  dim_ = dim;
+  random_scale_ = random_scale;
+}
+
+void ShakeComponent::InitFromConfig(ConfigLine *cfl) {
+  int32 dim = 0;
+  BaseFloat random_scale = 0.2;
+  test_mode_ = false;
+  bool ok = cfl->GetValue("dim", &dim);
+  cfl->GetValue("random-scale", &random_scale);
+  // It only makes sense to set test-mode in the config for testing purposes.
+  cfl->GetValue("test-mode", &test_mode_);
+    // for this stage, dropout is hard coded in
+    // normal mode if not declared in config
+  if (!ok || cfl->HasUnusedValues() || dim <= 0 || random_scale < 0.0)
+       KALDI_ERR << "Invalid initializer for layer of type "
+                 << Type() << ": \"" << cfl->WholeLine() << "\"";
+  Init(dim, random_scale);
+}
+
+std::string ShakeComponent::Info() const {
+  std::ostringstream stream;
+  stream << Type() << ", dim=" << dim_
+         << ", random-scale=" << random_scale_;
+  return stream.str();
+}
+
+void* ShakeComponent::Propagate(const ComponentPrecomputedIndexes *indexes,
+                                const CuMatrixBase<BaseFloat> &in,
+                                CuMatrixBase<BaseFloat> *out) const {
+  KALDI_ASSERT(out->NumRows() == in.NumRows() && out->NumCols() == in.NumCols()
+               && in.NumCols() == dim_);
+
+  BaseFloat random_scale = random_scale_;
+  KALDI_ASSERT(random_scale >= 0.0 && random_scale <= 1.0);
+  if (test_mode_) {
+    out->CopyFromMat(in);
+    return NULL;
+  }
+  BaseFloat r = (RandUniform() * 2.0 - 1.0) * random_scale;
+  out->CopyFromMat(in);
+  CuSubMatrix<BaseFloat> left_block(*out, 0, out->NumRows(),
+                                    0, out->NumCols() / 2);
+  CuSubMatrix<BaseFloat> right_block(*out, 0, out->NumRows(),
+                                     out->NumCols() / 2,
+                                     (out->NumCols() + 1) / 2);
+  left_block.Scale(1.0 - r);
+  right_block.Scale(1.0 + r);
+
+  return NULL;
+}
+
+void ShakeComponent::Backprop(const std::string &debug_info,
+                              const ComponentPrecomputedIndexes *indexes,
+                              const CuMatrixBase<BaseFloat> &in_value,
+                              const CuMatrixBase<BaseFloat> &out_value,
+                              const CuMatrixBase<BaseFloat> &out_deriv,
+                              void *memo,
+                              Component *to_update,
+                              CuMatrixBase<BaseFloat> *in_deriv) const {
+  KALDI_ASSERT(in_deriv->NumRows() == out_deriv.NumRows() &&
+               in_deriv->NumCols() == out_deriv.NumCols());
+  in_deriv->CopyFromMat(out_deriv);
+}
+
+
+
+void ShakeComponent::Read(std::istream &is, bool binary) {
+  std::string token;
+  ReadToken(is, binary, &token);
+  if (token == "<ShakeComponent>") {
+    ReadToken(is, binary, &token);
+  }
+  KALDI_ASSERT(token == "<Dim>");
+  ReadBasicType(is, binary, &dim_);  // read dimension.
+  ReadToken(is, binary, &token);
+  KALDI_ASSERT(token == "<RandomScale>");
+  ReadBasicType(is, binary, &random_scale_);  // read random scale
+  ReadToken(is, binary, &token);
+  if (token == "<TestMode>") {
+    ReadBasicType(is, binary, &test_mode_);  // read test mode
+    ExpectToken(is, binary, "</ShakeComponent>");
+  } else {
+    test_mode_ = false;
+    KALDI_ASSERT(token == "</ShakeComponent>");
+  }
+}
+
+void ShakeComponent::Write(std::ostream &os, bool binary) const {
+  WriteToken(os, binary, "<ShakeComponent>");
+  WriteToken(os, binary, "<Dim>");
+  WriteBasicType(os, binary, dim_);
+  WriteToken(os, binary, "<RandomScale>");
+  WriteBasicType(os, binary, random_scale_);
+  WriteToken(os, binary, "<TestMode>");
+  WriteBasicType(os, binary, test_mode_);
+  WriteToken(os, binary, "</ShakeComponent>");
+}
+
 void ElementwiseProductComponent::Init(int32 input_dim, int32 output_dim)  {
   input_dim_ = input_dim;
   output_dim_ = output_dim;
