@@ -155,6 +155,8 @@ Component* Component::NewComponentOfType(const std::string &component_type) {
     ans = new DropoutComponent();
   } else if (component_type == "DropoutMaskComponent") {
     ans = new DropoutMaskComponent();
+  } else if (component_type == "AdditiveNoiseComponent") {
+    ans = new AdditiveNoiseComponent();
   } else if (component_type == "BackpropTruncationComponent") {
     ans = new BackpropTruncationComponent();
   } else if (component_type == "LstmNonlinearityComponent") {

@@ -179,13 +179,13 @@ if [ $stage -le 15 ]; then
   fixed-affine-layer name=lda input=Append(-1,0,1,ReplaceIndex(ivector, t, 0)) affine-transform-file=$dir/configs/lda.mat
 
   # the first splicing is moved before the lda layer, so no splicing here
-  relu-batchnorm-layer name=tdnn1 dim=450
-  relu-batchnorm-layer name=tdnn2 input=Append(-1,0,1) dim=450
-  relu-batchnorm-layer name=tdnn3 input=Append(-1,0,1) dim=450
-  relu-batchnorm-layer name=tdnn4 input=Append(-3,0,3) dim=450
-  relu-batchnorm-layer name=tdnn5 input=Append(-3,0,3) dim=450
-  relu-batchnorm-layer name=tdnn6 input=Append(-3,0,3) dim=450
-  relu-batchnorm-layer name=tdnn7 input=Append(-3,0,3) dim=450
+  relu-batchnorm-layer name=tdnn1 dim=450 noise-stddev=0.1
+  relu-batchnorm-layer name=tdnn2 input=Append(-1,0,1) dim=450 noise-stddev=0.2
+  relu-batchnorm-layer name=tdnn3 input=Append(-1,0,1) dim=450 noise-stddev=0.2
+  relu-batchnorm-layer name=tdnn4 input=Append(-3,0,3) dim=450 noise-stddev=0.2
+  relu-batchnorm-layer name=tdnn5 input=Append(-3,0,3) dim=450 noise-stddev=0.2
+  relu-batchnorm-layer name=tdnn6 input=Append(-3,0,3) dim=450 noise-stddev=0.2
+  relu-batchnorm-layer name=tdnn7 input=Append(-3,0,3) dim=450 noise-stddev=0.2
 
   ## adding the layers for chain branch
   relu-batchnorm-layer name=prefinal-chain input=tdnn7 dim=450 target-rms=0.5

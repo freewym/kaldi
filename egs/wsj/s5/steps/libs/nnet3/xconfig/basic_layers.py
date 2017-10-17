@@ -662,6 +662,8 @@ class XconfigBasicLayer(XconfigLayerBase):
                        'dropout-proportion': 0.5,  # dropout-proportion only
                                                    # affects layers with
                                                    # 'dropout' in the name.
+                       'noise-stddev': 0.0,        # add noise right after
+                                                   # affine and before relu.
                        'add-log-stddev': False}
 
     def check_configs(self):
@@ -676,6 +678,9 @@ class XconfigBasicLayer(XconfigLayerBase):
         if self.config['learning-rate-factor'] <= 0.0:
             raise RuntimeError("learning-rate-factor has invalid value {0}"
                                .format(self.config['learning-rate-factor']))
+        if self.config['noise-stddev'] < 0.0:
+            raise RuntimeError("noise-stddev has invalid value {0}"
+                               .format(self.config['noise-stddev']))
 
     def output_name(self, auxiliary_output=None):
         # at a later stage we might want to expose even the pre-nonlinearity
@@ -686,6 +691,8 @@ class XconfigBasicLayer(XconfigLayerBase):
         assert split_layer_name[-1] == 'layer'
         last_nonlinearity = split_layer_name[-2]
         # return something like: layer3.renorm
+        if self.config['noise-stddev'] > 0.0:
+            return '{0}.additivenoise'.format(self.name)
         return '{0}.{1}'.format(self.name, last_nonlinearity)
 
     def output_dim(self, auxiliary_output=None):
@@ -731,6 +738,7 @@ class XconfigBasicLayer(XconfigLayerBase):
         learning_rate_factor = self.config['learning-rate-factor']
         learning_rate_option = ('learning-rate-factor={0}'.format(learning_rate_factor)
                                 if learning_rate_factor != 1.0 else '')
+        noise_stddev = self.config['noise-stddev']
 
         # The output of the affine component needs to have one dimension fewer in order to
         # get the required output dim, if the final 'renorm' component has 'add-log-stddev' set
@@ -759,6 +767,19 @@ class XconfigBasicLayer(XconfigLayerBase):
                 ''.format(self.name, input_desc))
         configs.append(line)
         cur_node = '{0}.affine'.format(self.name)
+
+        #if noise_stddev > 0.0:
+        #    line = ('component name={0}.additivenoise'
+        #            ' type=AdditiveNoiseComponent'
+        #            ' dim={1}'
+        #            ' stddev={2}'.format(self.name, output_dim, noise_stddev))
+        #    configs.append(line)
+
+        #    line = ('component-node name={0}.additivenoise'
+        #            ' component={0}.additivenoise input={1}'
+        #            ''.format(self.name, cur_node))
+        #    configs.append(line)
+        #    cur_node = '{0}.additivenoise'.format(self.name)
 
         for i, nonlinearity in enumerate(nonlinearities):
             if nonlinearity == 'relu':
@@ -818,6 +839,19 @@ class XconfigBasicLayer(XconfigLayerBase):
 
             configs.append(line)
             cur_node = '{0}.{1}'.format(self.name, nonlinearity)
+
+        if noise_stddev > 0.0:
+            line = ('component name={0}.additivenoise'
+                    ' type=AdditiveNoiseComponent'
+                    ' dim={1}'
+                    ' stddev={2}'.format(self.name, output_dim, noise_stddev))
+            configs.append(line)
+
+            line = ('component-node name={0}.additivenoise'
+                    ' component={0}.additivenoise input={1}'
+                    ''.format(self.name, cur_node))
+            configs.append(line)
+            cur_node = '{0}.additivenoise'.format(self.name)
         return configs
 
 

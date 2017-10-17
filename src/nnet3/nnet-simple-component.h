@@ -147,6 +147,53 @@ class DropoutComponent : public RandomComponent {
   bool dropout_per_frame_;
 };
 
+/// This is a bit similar to dropout but adding (not multiplying) Gaussian
+/// noise with a given standard deviation.
+class AdditiveNoiseComponent: public RandomComponent {
+ public:
+  void Init(int32 dim, BaseFloat noise_stddev = 1.0);
+
+  AdditiveNoiseComponent(int32 dim, BaseFloat stddev) { Init(dim, stddev); }
+
+  AdditiveNoiseComponent(): dim_(0), stddev_(1.0) { }
+
+  AdditiveNoiseComponent(const AdditiveNoiseComponent &other);
+
+  virtual int32 Properties() const {
+    return kLinearInInput|kBackpropInPlace|kSimpleComponent|kRandomComponent;
+  }
+  virtual std::string Type() const { return "AdditiveNoiseComponent"; }
+
+  virtual void InitFromConfig(ConfigLine *cfl);
+
+  virtual int32 InputDim() const { return dim_; }
+
+  virtual int32 OutputDim() const { return dim_; }
+
+  virtual void Read(std::istream &is, bool binary);
+
+  virtual void Write(std::ostream &os, bool binary) const;
+
+  virtual void* Propagate(const ComponentPrecomputedIndexes *indexes,
+                          const CuMatrixBase<BaseFloat> &in,
+                          CuMatrixBase<BaseFloat> *out) const;
+  virtual void Backprop(const std::string &debug_info,
+                        const ComponentPrecomputedIndexes *indexes,
+                        const CuMatrixBase<BaseFloat> &in_value,
+                        const CuMatrixBase<BaseFloat> &out_value,
+                        const CuMatrixBase<BaseFloat> &out_deriv,
+                        void *memo,
+                        Component *to_update, // may be identical to "this".
+                        CuMatrixBase<BaseFloat> *in_deriv) const;
+
+  virtual Component* Copy() const;
+
+  virtual std::string Info() const;
+ private:
+  int32 dim_;
+  BaseFloat stddev_;
+};
+
 class ElementwiseProductComponent: public Component {
  public:
   void Init(int32 input_dim, int32 output_dim);

@@ -231,6 +231,81 @@ void DropoutComponent::Write(std::ostream &os, bool binary) const {
   WriteToken(os, binary, "</DropoutComponent>");
 }
 
+AdditiveNoiseComponent::AdditiveNoiseComponent(
+    const AdditiveNoiseComponent &other):
+    RandomComponent(other),
+    dim_(other.dim_),
+    stddev_(other.stddev_) { }
+
+Component* AdditiveNoiseComponent::Copy() const {
+  AdditiveNoiseComponent *ans = new AdditiveNoiseComponent(*this);
+  return ans;
+}
+
+void AdditiveNoiseComponent::Init(int32 dim, BaseFloat stddev) {
+  dim_ = dim;
+  stddev_ = stddev;
+}
+
+void AdditiveNoiseComponent::InitFromConfig(ConfigLine *cfl) {
+  int32 dim = 0;
+  BaseFloat stddev = 1.0;
+  bool ok = cfl->GetValue("dim", &dim);
+  cfl->GetValue("stddev", &stddev);
+  if (!ok || cfl->HasUnusedValues() || dim <= 0 || stddev <= 0)
+    KALDI_ERR << "Invalid initializer for layer of type "
+              << Type() << ": \"" << cfl->WholeLine() << "\"";
+  Init(dim, stddev);
+}
+
+void AdditiveNoiseComponent::Read(std::istream &is, bool binary) {
+  ExpectOneOrTwoTokens(is, binary, "<AdditiveNoiseComponent>", "<Dim>");
+  ReadBasicType(is, binary, &dim_);
+  ExpectToken(is, binary, "<Stddev>");
+  ReadBasicType(is, binary, &stddev_);
+  ExpectToken(is, binary, "</AdditiveNoiseComponent>");
+}
+
+void AdditiveNoiseComponent::Write(std::ostream &os, bool binary) const {
+  WriteToken(os, binary, "<AdditiveNoiseComponent>");
+  WriteToken(os, binary, "<Dim>");
+  WriteBasicType(os, binary, dim_);
+  WriteToken(os, binary, "<Stddev>");
+  WriteBasicType(os, binary, stddev_);
+  WriteToken(os, binary, "</AdditiveNoiseComponent>");
+}
+
+std::string AdditiveNoiseComponent::Info() const {
+  std::ostringstream stream;
+  stream << Type() << ", dim=" << dim_
+         << ", stddev=" << stddev_;
+  return stream.str();
+}
+
+void* AdditiveNoiseComponent::Propagate(
+    const ComponentPrecomputedIndexes *indexes,
+    const CuMatrixBase<BaseFloat> &in,
+    CuMatrixBase<BaseFloat> *out) const {
+  KALDI_ASSERT(in.NumCols() == this->InputDim());
+  out->CopyFromMat(in);
+  CuMatrix<BaseFloat> rand(in.NumRows(), in.NumCols());
+  const_cast<CuRand<BaseFloat>&>(random_generator_).RandUniform(&rand);
+  out->AddMat(stddev_, rand);
+  return NULL;
+}
+
+void AdditiveNoiseComponent::Backprop(
+    const std::string &debug_info,
+    const ComponentPrecomputedIndexes *indexes,
+    const CuMatrixBase<BaseFloat> &in_value,
+    const CuMatrixBase<BaseFloat> &out_value,
+    const CuMatrixBase<BaseFloat> &out_deriv,
+    void *memo,
+    Component *to_update,
+    CuMatrixBase<BaseFloat> *in_deriv) const {
+  in_deriv->CopyFromMat(out_deriv);
+}
+
 void ElementwiseProductComponent::Init(int32 input_dim, int32 output_dim)  {
   input_dim_ = input_dim;
   output_dim_ = output_dim;
