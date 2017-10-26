@@ -137,23 +137,24 @@ def get_successful_models(num_models, log_file_pattern,
 
 
 def get_average_nnet_model(dir, iter, nnets_list, run_opts,
-                           get_raw_nnet_from_am=True):
+                           get_raw_nnet_from_am=True, affix=""):
 
     next_iter = iter + 1
     if get_raw_nnet_from_am:
         out_model = ("""- \| nnet3-am-copy --set-raw-nnet=-  \
-                        {dir}/{iter}.mdl {dir}/{next_iter}.mdl""".format(
+                        {dir}/{iter}.mdl {dir}/{next_iter}.{affix}mdl""".format(
                             dir=dir, iter=iter,
-                            next_iter=next_iter))
+                            next_iter=next_iter, affix=affix))
     else:
-        out_model = "{dir}/{next_iter}.raw".format(
-            dir=dir, next_iter=next_iter)
+        out_model = "{dir}/{next_iter}.{affix}raw".format(
+            dir=dir, next_iter=next_iter, affix=affix)
 
     common_lib.execute_command(
-        """{command} {dir}/log/average.{iter}.log \
+        """{command} {dir}/log/{affix}average.{iter}.log \
                 nnet3-average {nnets_list} \
                 {out_model}""".format(command=run_opts.command,
                                       dir=dir,
+                                      affix=affix,
                                       iter=iter,
                                       nnets_list=nnets_list,
                                       out_model=out_model))
@@ -671,6 +672,14 @@ def remove_model(nnet_dir, iter, num_iters, models_to_combine=None,
     if os.path.isfile(file_name):
         os.remove(file_name)
 
+    if get_raw_nnet_from_am:
+        file_name = '{0}/{1}.avg_mdl'.format(nnet_dir, iter)
+    else:
+        file_name = '{0}/{1}.avg_raw'.format(nnet_dir, iter)
+
+    if os.path.isfile(file_name):
+        os.remove(file_name)
+
 
 def self_test():
     assert halve_minibatch_size_str('64') == '32'
@@ -855,6 +864,15 @@ class CommonParser(object):
                                  help="""Set this to false to disable the final
                                  'combine' stage (in this case we just use the
                                  last-numbered model as the final.mdl).""")
+        self.parser.add_argument("--trainer.optimization.combine-averaged-models",
+                                 dest='combine_averaged_models', type=str,
+                                 action=common_lib.StrToBoolAction,
+                                 choices=["true", "false"], default=False,
+                                 help="""Set this to true to combine averaged
+                                 models, each of which is averaged over all the
+                                 minibatches. within an iteration. Otherwise
+                                 combine regular models after each iteration.
+                                 Only relavant if do-final-combination is true.""")
         self.parser.add_argument("--trainer.optimization.combine-sum-to-one-penalty",
                                  type=float, dest='combine_sum_to_one_penalty', default=0.0,
                                  help="""If > 0, activates 'soft' enforcement of the

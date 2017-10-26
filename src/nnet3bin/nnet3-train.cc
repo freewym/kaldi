@@ -88,6 +88,12 @@ int main(int argc, char *argv[]) {
 #endif
     WriteKaldiObject(nnet, nnet_wxfilename, binary_write);
     KALDI_LOG << "Wrote model to " << nnet_wxfilename;
+    if (train_config.write_averaged_model != "") {
+      WriteKaldiObject(trainer.AveragedModel(),
+                       train_config.write_averaged_model, binary_write);
+      KALDI_LOG << "Wrote averaged model to "
+                << train_config.write_averaged_model;
+    }
     return (ok ? 0 : 1);
   } catch(const std::exception &e) {
     std::cerr << e.what() << '\n';

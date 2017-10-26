@@ -28,6 +28,7 @@ NnetTrainer::NnetTrainer(const NnetTrainerOptions &config,
                          Nnet *nnet):
     config_(config),
     nnet_(nnet),
+    is_averaged_(false),
     compiler_(*nnet, config_.optimize_config, config_.compiler_config),
     num_minibatches_processed_(0),
     srand_seed_(RandInt(0, 100000)) {
@@ -37,6 +38,7 @@ NnetTrainer::NnetTrainer(const NnetTrainerOptions &config,
                config.max_param_change >= 0.0);
   delta_nnet_ = nnet_->Copy();
   ScaleNnet(0.0, delta_nnet_);
+  summed_nnet_ = delta_nnet_->Copy();
   const int32 num_updatable = NumUpdatableComponents(*delta_nnet_);
   num_max_change_per_component_applied_.resize(num_updatable, 0);
   num_max_change_global_applied_ = 0;
@@ -82,6 +84,8 @@ void NnetTrainer::Train(const NnetExample &eg) {
     TrainInternal(eg, *computation);
   }
 
+  if (config_.write_averaged_model != "")
+    AddNnet(*nnet_, 1.0, summed_nnet_);
   num_minibatches_processed_++;
 }
 
@@ -229,6 +233,15 @@ void NnetTrainer::PrintMaxChangeStats() const {
               << " \% of the time.";
 }
 
+const Nnet& NnetTrainer::AveragedModel() {
+  KALDI_ASSERT(config_.write_averaged_model != "");
+  if (!is_averaged_) {
+    ScaleNnet(1.0 / num_minibatches_processed_, summed_nnet_);
+    is_averaged_ = true;
+  }
+  return *summed_nnet_;
+}
+
 void ObjectiveFunctionInfo::UpdateStats(
     const std::string &output_name,
     int32 minibatches_per_phase,
@@ -324,6 +337,7 @@ NnetTrainer::~NnetTrainer() {
     KALDI_LOG << "Wrote computation cache to " << config_.write_cache;
   }
   delete delta_nnet_;
+  delete summed_nnet_;
 }
 
 void ComputeObjectiveFunction(const GeneralMatrix &supervision,

@@ -129,7 +129,8 @@ def train_new_models(dir, iter, srand, num_jobs,
                      momentum, max_param_change,
                      shuffle_buffer_size, num_chunk_per_minibatch_str,
                      frame_subsampling_factor, run_opts,
-                     backstitch_training_scale=0.0, backstitch_training_interval=1):
+                     backstitch_training_scale=0.0, backstitch_training_interval=1,
+                     generate_averaged_model=False):
     """
     Called from train_one_iteration(), this method trains new models
     with 'num_jobs' jobs, and
@@ -173,6 +174,9 @@ def train_new_models(dir, iter, srand, num_jobs,
                          (" --write-cache={0}/cache.{1}".format(dir, iter + 1)
                           if job == 1 else ""))
 
+        averaged_model_wxfilename = "{dir}/{next_iter}.{job}.avg_raw".format(
+            dir=dir, next_iter=iter + 1, job=job) if generate_averaged_model else ""
+
         thread = common_lib.background_command(
             """{command} {train_queue_opt} {dir}/log/train.{iter}.{job}.log \
                     nnet3-chain-train {parallel_train_opts} {verbose_opt} \
@@ -184,6 +188,7 @@ def train_new_models(dir, iter, srand, num_jobs,
                     --max-param-change={max_param_change} \
                     --backstitch-training-scale={backstitch_training_scale} \
                     --backstitch-training-interval={backstitch_training_interval} \
+                    --write-averaged-model={write_averaged_model} \
                     --l2-regularize-factor={l2_regularize_factor} \
                     --srand={srand} \
                     "{raw_model}" {dir}/den.fst \
@@ -208,6 +213,7 @@ def train_new_models(dir, iter, srand, num_jobs,
                         momentum=momentum, max_param_change=max_param_change,
                         backstitch_training_scale=backstitch_training_scale,
                         backstitch_training_interval=backstitch_training_interval,
+                        write_averaged_model=averaged_model_wxfilename,
                         l2_regularize_factor=1.0/num_jobs,
                         raw_model=raw_model_string,
                         egs_dir=egs_dir, archive_index=archive_index,
@@ -234,7 +240,8 @@ def train_one_iteration(dir, iter, srand, egs_dir,
                         momentum, max_param_change, shuffle_buffer_size,
                         frame_subsampling_factor,
                         run_opts, dropout_edit_string="",
-                        backstitch_training_scale=0.0, backstitch_training_interval=1):
+                        backstitch_training_scale=0.0, backstitch_training_interval=1,
+                        generate_averaged_model=False):
     """ Called from steps/nnet3/chain/train.py for one iteration for
     neural network training with LF-MMI objective
 
@@ -311,7 +318,8 @@ def train_one_iteration(dir, iter, srand, egs_dir,
                      # first few iterations (hard-coded as 15)
                      backstitch_training_scale=(backstitch_training_scale *
                          iter / 15 if iter < 15 else backstitch_training_scale),
-                     backstitch_training_interval=backstitch_training_interval)
+                     backstitch_training_interval=backstitch_training_interval,
+                     generate_averaged_model=generate_averaged_model)
 
     [models_to_average, best_model] = common_train_lib.get_successful_models(
          num_jobs, '{0}/log/train.{1}.%.log'.format(dir, iter))
@@ -333,9 +341,20 @@ def train_one_iteration(dir, iter, srand, egs_dir,
             best_model_index=best_model,
             run_opts=run_opts)
 
+    if generate_averaged_model:
+        averaged_nnets_list =[]
+        for n in models_to_average:
+            averaged_nnets_list.append("{0}/{1}.{2}.avg_raw".format(dir, iter + 1, n))
+        common_train_lib.get_average_nnet_model(
+                dir=dir, iter=iter,
+                nnets_list=" ".join(averaged_nnets_list),
+                run_opts=run_opts, affix="avg_")
+
     try:
         for i in range(1, num_jobs + 1):
             os.remove("{0}/{1}.{2}.raw".format(dir, iter + 1, i))
+            if generate_averaged_model:
+                os.remove("{0}/{1}.{2}.avg_raw".format(dir, iter + 1, i))
     except OSError:
         raise Exception("Error while trying to delete the raw models")
 
@@ -492,7 +511,7 @@ def compute_progress(dir, iter, run_opts):
 def combine_models(dir, num_iters, models_to_combine, num_chunk_per_minibatch_str,
                    egs_dir, leaky_hmm_coefficient, l2_regularize,
                    xent_regularize, run_opts,
-                   sum_to_one_penalty=0.0):
+                   sum_to_one_penalty=0.0, combine_averaged_models=False):
     """ Function to do model combination
 
     In the nnet3 setup, the logic
@@ -508,8 +527,9 @@ def combine_models(dir, num_iters, models_to_combine, num_chunk_per_minibatch_st
     # TODO: if it turns out the sum-to-one-penalty code is not useful,
     # remove support for it.
 
+    affix = "avg_" if combine_averaged_models else ""
     for iter in sorted(models_to_combine):
-        model_file = '{0}/{1}.mdl'.format(dir, iter)
+        model_file = '{0}/{1}.{2}mdl'.format(dir, iter, affix)
         if os.path.exists(model_file):
             # we used to copy them with nnet3-am-copy --raw=true, but now
             # the raw-model-reading code discards the other stuff itself.

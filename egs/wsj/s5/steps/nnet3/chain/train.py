@@ -492,6 +492,10 @@ def train(args, run_opts):
                                                      percent,
                                                      lrate, shrink_info_str))
 
+            generate_averaged_model = (args.do_final_combination and
+                                       args.combine_averaged_models and
+                                       (iter + 1) in models_to_combine)
+
             chain_lib.train_one_iteration(
                 dir=args.dir,
                 iter=iter,
@@ -519,7 +523,8 @@ def train(args, run_opts):
                 frame_subsampling_factor=args.frame_subsampling_factor,
                 run_opts=run_opts,
                 backstitch_training_scale=args.backstitch_training_scale,
-                backstitch_training_interval=args.backstitch_training_interval)
+                backstitch_training_interval=args.backstitch_training_interval,
+                generate_averaged_model=generate_averaged_model)
 
             if args.cleanup:
                 # do a clean up everythin but the last 2 models, under certain
@@ -554,7 +559,8 @@ def train(args, run_opts):
                 l2_regularize=args.l2_regularize,
                 xent_regularize=args.xent_regularize,
                 run_opts=run_opts,
-                sum_to_one_penalty=args.combine_sum_to_one_penalty)
+                sum_to_one_penalty=args.combine_sum_to_one_penalty,
+                combine_averaged_models=args.combine_averaged_models)
         else:
             logger.info("Copying the last-numbered model to final.mdl")
             common_lib.force_symlink("{0}.mdl".format(num_iters),

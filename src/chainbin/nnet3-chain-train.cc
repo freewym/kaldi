@@ -88,6 +88,13 @@ int main(int argc, char *argv[]) {
         trainer.Train(example_reader.Value());
 
       ok = trainer.PrintTotalStats();
+
+      if (opts.nnet_config.write_averaged_model != "") {
+        WriteKaldiObject(trainer.AveragedModel(),
+                         opts.nnet_config.write_averaged_model, binary_write);
+        KALDI_LOG << "Wrote averaged model to "
+                  << opts.nnet_config.write_averaged_model;
+      }
     }
 
 #if HAVE_CUDA==1

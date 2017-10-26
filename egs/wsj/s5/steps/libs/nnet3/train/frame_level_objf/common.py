@@ -32,7 +32,8 @@ def train_new_models(dir, iter, srand, num_jobs,
                      run_opts, frames_per_eg=-1,
                      min_deriv_time=None, max_deriv_time_relative=None,
                      use_multitask_egs=False,
-                     backstitch_training_scale=0.0, backstitch_training_interval=1):
+                     backstitch_training_scale=0.0, backstitch_training_interval=1,
+                     generate_averaged_model=False):
     """ Called from train_one_iteration(), this model does one iteration of
     training with 'num_jobs' jobs, and writes files like
     exp/tdnn_a/24.{1,2,3,..<num_jobs>}.raw
@@ -123,6 +124,9 @@ def train_new_models(dir, iter, srand, num_jobs,
                 srand=iter+srand,
                 scp_or_ark=scp_or_ark,
                 multitask_egs_opts=multitask_egs_opts))
+        
+        averaged_model_wxfilename = "{dir}/{next_iter}.{job}.avg_raw".format(
+            dir=dir, next_iter=iter + 1, job=job) if generate_averaged_model else ""
 
         # note: the thread waits on that process's completion.
         thread = common_lib.background_command(
@@ -134,6 +138,7 @@ def train_new_models(dir, iter, srand, num_jobs,
                     --backstitch-training-scale={backstitch_training_scale} \
                     --l2-regularize-factor={l2_regularize_factor} \
                     --backstitch-training-interval={backstitch_training_interval} \
+                    --write-averaged-model={write_averaged_model} \
                     --srand={srand} \
                     {deriv_time_opts} "{raw_model}" "{egs_rspecifier}" \
                     {dir}/{next_iter}.{job}.raw""".format(
@@ -149,6 +154,7 @@ def train_new_models(dir, iter, srand, num_jobs,
                 l2_regularize_factor=1.0/num_jobs,
                 backstitch_training_scale=backstitch_training_scale,
                 backstitch_training_interval=backstitch_training_interval,
+                write_averaged_model=averaged_model_wxfilename,
                 deriv_time_opts=" ".join(deriv_time_opts),
                 raw_model=raw_model_string,
                 egs_rspecifier=egs_rspecifier),
@@ -171,7 +177,7 @@ def train_one_iteration(dir, iter, srand, egs_dir,
                         get_raw_nnet_from_am=True,
                         use_multitask_egs=False,
                         backstitch_training_scale=0.0, backstitch_training_interval=1,
-                        compute_per_dim_accuracy=False):
+                        compute_per_dim_accuracy=False, generate_averaged_model=False):
     """ Called from steps/nnet3/train_*.py scripts for one iteration of neural
     network training
 
@@ -270,7 +276,8 @@ def train_one_iteration(dir, iter, srand, egs_dir,
                      image_augmentation_opts=image_augmentation_opts,
                      use_multitask_egs=use_multitask_egs,
                      backstitch_training_scale=backstitch_training_scale,
-                     backstitch_training_interval=backstitch_training_interval)
+                     backstitch_training_interval=backstitch_training_interval,
+                     generate_averaged_model=generate_averaged_model)
 
     [models_to_average, best_model] = common_train_lib.get_successful_models(
          num_jobs, '{0}/log/train.{1}.%.log'.format(dir, iter))
@@ -294,9 +301,21 @@ def train_one_iteration(dir, iter, srand, egs_dir,
             run_opts=run_opts,
             get_raw_nnet_from_am=get_raw_nnet_from_am)
 
+    if generate_averaged_model:
+        averaged_nnets_list =[]
+        for n in models_to_average:
+            averaged_nnets_list.append("{0}/{1}.{2}.avg_raw".format(dir, iter + 1, n))
+        common_train_lib.get_average_nnet_model(
+                dir=dir, iter=iter,
+                nnets_list=" ".join(averaged_nnets_list),
+                run_opts=run_opts,
+                get_raw_nnet_from_am=get_raw_nnet_from_am, affix="avg_")
+
     try:
         for i in range(1, num_jobs + 1):
             os.remove("{0}/{1}.{2}.raw".format(dir, iter + 1, i))
+            if generate_averaged_model:
+                os.remove("{0}/{1}.{2}.avg_raw".format(dir, iter + 1, i))
     except OSError:
         logger.error("Error while trying to delete the raw models")
         raise
@@ -446,7 +465,8 @@ def combine_models(dir, num_iters, models_to_combine, egs_dir,
                    chunk_width=None, get_raw_nnet_from_am=True,
                    sum_to_one_penalty=0.0,
                    use_multitask_egs=False,
-                   compute_per_dim_accuracy=False):
+                   compute_per_dim_accuracy=False,
+                   combine_averaged_models=False):
     """ Function to do model combination
 
     In the nnet3 setup, the logic
@@ -459,9 +479,10 @@ def combine_models(dir, num_iters, models_to_combine, egs_dir,
 
     models_to_combine.add(num_iters)
 
+    affix = "avg_" if combine_averaged_models else ""
     for iter in sorted(models_to_combine):
         suffix = "mdl" if get_raw_nnet_from_am else "raw"
-        model_file = '{0}/{1}.{2}'.format(dir, iter, suffix)
+        model_file = '{0}/{1}.{2}'.format(dir, iter, affix + suffix)
         if not os.path.exists(model_file):
             raise Exception('Model file {0} missing'.format(model_file))
         raw_model_strings.append(model_file)

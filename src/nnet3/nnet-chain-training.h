@@ -68,6 +68,11 @@ class NnetChainTrainer {
   // per-component max-change and global max-change were enforced.
   void PrintMaxChangeStats() const;
 
+  // Returns the averaged model over all minibatches by dividing *summed_nnet_
+  // by num_minibatches_processed_. It will directly return *summed_nnet_ if
+  // it has already been averaged.
+  const Nnet& AveragedModel();
+
   ~NnetChainTrainer();
  private:
   // The internal function for doing one step of conventional SGD training.
@@ -93,6 +98,12 @@ class NnetChainTrainer {
                       // (we'd call this gradient_nnet_, but due to
                       // natural-gradient update, it's better to consider it as
                       // a delta-parameter nnet.
+  Nnet *summed_nnet_; // Only used if write-averaged-model is nonempty. It
+                      // will accumulate models after each minibatch, and will
+                      // be divided by num_minibatches_processed_ at the end
+                      // of training to compute the averaged model.
+  bool is_averaged_;  // Indicates if *summed_nnet_ has already been averaged.
+                      // Only relavant if write-averaged-model is nonempty.
   CachingOptimizingCompiler compiler_;
 
   // This code supports multiple output layers, even though in the

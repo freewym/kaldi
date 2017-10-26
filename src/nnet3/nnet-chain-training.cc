@@ -30,6 +30,7 @@ NnetChainTrainer::NnetChainTrainer(const NnetChainTrainingOptions &opts,
     opts_(opts),
     den_graph_(den_fst, nnet->OutputDim("output")),
     nnet_(nnet),
+    is_averaged_(false),
     compiler_(*nnet, opts_.nnet_config.optimize_config,
               opts_.nnet_config.compiler_config),
     num_minibatches_processed_(0),
@@ -40,6 +41,7 @@ NnetChainTrainer::NnetChainTrainer(const NnetChainTrainingOptions &opts,
                opts.nnet_config.max_param_change >= 0.0);
   delta_nnet_ = nnet_->Copy();
   ScaleNnet(0.0, delta_nnet_);
+  summed_nnet_ = delta_nnet_->Copy();
   const int32 num_updatable = NumUpdatableComponents(*delta_nnet_);
   num_max_change_per_component_applied_.resize(num_updatable, 0);
   num_max_change_global_applied_ = 0;
@@ -88,6 +90,8 @@ void NnetChainTrainer::Train(const NnetChainExample &chain_eg) {
     TrainInternal(chain_eg, *computation);
   }
 
+  if (nnet_config.write_averaged_model != "")
+    AddNnet(*nnet_, 1.0, summed_nnet_);
   num_minibatches_processed_++;
 }
 
@@ -281,6 +285,15 @@ void NnetChainTrainer::PrintMaxChangeStats() const {
               << " \% of the time.";
 }
 
+const Nnet& NnetChainTrainer::AveragedModel() {
+  KALDI_ASSERT(opts_.nnet_config.write_averaged_model != "");
+  if (!is_averaged_) {
+    ScaleNnet(1.0 / num_minibatches_processed_, summed_nnet_);
+    is_averaged_ = true;
+  }
+  return *summed_nnet_;
+}
+
 NnetChainTrainer::~NnetChainTrainer() {
   if (opts_.nnet_config.write_cache != "") {
     Output ko(opts_.nnet_config.write_cache, opts_.nnet_config.binary_write_cache);
@@ -288,6 +301,7 @@ NnetChainTrainer::~NnetChainTrainer() {
     KALDI_LOG << "Wrote computation cache to " << opts_.nnet_config.write_cache;
   }
   delete delta_nnet_;
+  delete summed_nnet_;
 }
 
 

@@ -343,6 +343,10 @@ def train(args, run_opts):
                                 "shrink-value={1}".format(args.proportional_shrink,
                                                           shrinkage_value))
 
+            generate_averaged_model = (args.do_final_combination and
+                                       args.combine_averaged_models and
+                                       (iter + 1) in models_to_combine)
+
             train_lib.common.train_one_iteration(
                 dir=args.dir,
                 iter=iter,
@@ -367,7 +371,8 @@ def train(args, run_opts):
                 image_augmentation_opts=args.image_augmentation_opts,
                 use_multitask_egs=use_multitask_egs,
                 backstitch_training_scale=args.backstitch_training_scale,
-                backstitch_training_interval=args.backstitch_training_interval)
+                backstitch_training_interval=args.backstitch_training_interval,
+                generate_averaged_model=generate_averaged_model)
 
             if args.cleanup:
                 # do a clean up everything but the last 2 models, under certain
@@ -399,7 +404,8 @@ def train(args, run_opts):
                 minibatch_size_str=args.minibatch_size, run_opts=run_opts,
                 get_raw_nnet_from_am=False,
                 sum_to_one_penalty=args.combine_sum_to_one_penalty,
-                use_multitask_egs=use_multitask_egs)
+                use_multitask_egs=use_multitask_egs,
+                combine_averaged_models=args.combine_averaged_models)
         else:
             common_lib.force_symlink("{0}.raw".format(num_iters),
                                      "{0}/final.raw".format(args.dir))

@@ -39,6 +39,7 @@ struct NnetTrainerOptions {
   BaseFloat l2_regularize_factor;
   BaseFloat backstitch_training_scale;
   int32 backstitch_training_interval;
+  std::string write_averaged_model;
   std::string read_cache;
   std::string write_cache;
   bool binary_write_cache;
@@ -55,6 +56,7 @@ struct NnetTrainerOptions {
       l2_regularize_factor(1.0),
       backstitch_training_scale(0.0),
       backstitch_training_interval(1),
+      write_averaged_model(""),
       binary_write_cache(true),
       max_param_change(2.0) { }
   void Register(OptionsItf *opts) {
@@ -92,6 +94,10 @@ struct NnetTrainerOptions {
                    &backstitch_training_interval,
                    "do backstitch training with the specified interval of "
                    "minibatches. It is referred as 'n' in our publications.");
+    opts->Register("write-averaged-model", &write_averaged_model, "This, if "
+                  "nonempty, will write out to the specified file the average "
+                  "of the models we have on each of the minibatches within an "
+                  "iteration.");
     opts->Register("read-cache", &read_cache, "the location where we can read "
                    "the cached computation from");
     opts->Register("write-cache", &write_cache, "the location where we want to "
@@ -185,6 +191,11 @@ class NnetTrainer {
   // per-component max-change and global max-change were enforced.
   void PrintMaxChangeStats() const;
 
+  // Returns the averaged model over all minibatches by dividing *summed_nnet_
+  // by num_minibatches_processed_. It will directly return *summed_nnet_ if
+  // it has already been averaged.
+  const Nnet& AveragedModel();
+
   ~NnetTrainer();
  private:
   // The internal function for doing one step of conventional SGD training.
@@ -208,6 +219,12 @@ class NnetTrainer {
                       // (we'd call this gradient_nnet_, but due to
                       // natural-gradient update, it's better to consider it as
                       // a delta-parameter nnet.
+  Nnet *summed_nnet_; // Only used if write-averaged-model is nonempty. It
+                      // will accumulate models after each minibatch, and will
+                      // be divided by num_minibatches_processed_ at the end
+                      // of training to compute the averaged model.
+  bool is_averaged_;  // Indicates if *summed_nnet_ has already been averaged.
+                      // Only relavant if write-averaged-model is nonempty.
   CachingOptimizingCompiler compiler_;
 
   // This code supports multiple output layers, even though in the
