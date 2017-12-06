@@ -35,6 +35,11 @@ dataset=cifar10
 srand=0
 reporting_email=
 affix=1c
+num_epochs=100
+
+alpha=0.7
+period=1
+delay=512
 
 
 # End configuration section.
@@ -90,9 +95,9 @@ if [ $stage -le 1 ]; then
 
 
   nf1=48
-  nf2=96
-  nf3=256
-  nb3=128
+  nf2=128
+  nf3=512
+  nb3=256
 
   a="num-minibatches-history=40.0"
   common="$a required-time-offsets=0 height-offsets=-1,0,1"
@@ -125,7 +130,7 @@ if [ $stage -le 2 ]; then
     --image.augmentation-opts="--horizontal-flip-prob=0.5 --horizontal-shift=0.1 --vertical-shift=0.1 --num-channels=3" \
     --trainer.srand=$srand \
     --trainer.max-param-change=2.0 \
-    --trainer.num-epochs=100 \
+    --trainer.num-epochs=$num_epochs \
     --egs.frames-per-eg=1 \
     --trainer.optimization.num-jobs-initial=1 \
     --trainer.optimization.num-jobs-final=2 \
@@ -133,6 +138,7 @@ if [ $stage -le 2 ]; then
     --trainer.optimization.final-effective-lrate=0.0003 \
     --trainer.optimization.minibatch-size=256,128,64 \
     --trainer.optimization.proportional-shrink=50.0 \
+    --trainer.optimization.backstitch-opts="--backstitch-alpha=$alpha --backstitch-period=$period --backstitch-delay=$delay" \
     --trainer.shuffle-buffer-size=2000 \
     --egs.dir="$egs" \
     --use-gpu=true \
