@@ -15,7 +15,6 @@
 
 # Begin configuration section.
 
-dir=exp/rnnlm_lstm_1a
 embedding_dim=512
 lstm_rpd=128
 lstm_nrpd=128
@@ -24,20 +23,25 @@ train_stage=-10
 
 # variables for lattice rescoring
 run_rescore=true
-ac_model_dir=exp/chain/tdnn_lstm1a_sp_ld5
+ac_model_dir=exp/$language/chain/tdnn_lstm1a_sp_ld5
 decode_dir_suffix=rnnlm_1a
 ngram_order=4 # approximate the lattice-rescoring by limiting the max-ngram-order
               # if it's set, it merges histories in the lattice if they share
               # the same ngram history and this prevents the lattice from 
               # exploding exponentially
 pruned_rescore=true
+language=swahili
 
 . ./cmd.sh
 . ./utils/parse_options.sh
 
-text=data/train/text
-lexicon=data/local/dict_nosp/lexiconp.txt
-text_dir=data/rnnlm/text_nosp_1e
+dir=exp/$language/rnnlm_lstm_1a
+
+text=data/$language/train/text
+lexicon=data/$language/local/dict_nosp/lexiconp.txt
+text_dir=data/$language/rnnlm/text_nosp_1e
+dir=exp/$language/rnnlm_lstm_1a
+
 mkdir -p $dir/config
 set -e
 
