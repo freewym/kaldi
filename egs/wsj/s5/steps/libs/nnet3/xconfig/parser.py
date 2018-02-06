@@ -34,6 +34,7 @@ config_to_layer = {
         'affine-layer' : xlayers.XconfigAffineLayer,
         'lstm-layer' : xlayers.XconfigLstmLayer,
         'lstmp-layer' : xlayers.XconfigLstmpLayer,
+        'nested-lstmp-layer' : xlayers.XconfigNestedLstmpLayer,
         'fast-lstm-layer' : xlayers.XconfigFastLstmLayer,
         'fast-lstmp-layer' : xlayers.XconfigFastLstmpLayer,
         'fast-lstmb-layer' : xlayers.XconfigFastLstmbLayer,

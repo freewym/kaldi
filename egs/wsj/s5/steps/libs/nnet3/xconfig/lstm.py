@@ -551,6 +551,322 @@ class XconfigLstmpLayer(XconfigLayerBase):
 
         return configs
 
+# This class is for lines like
+#   'lstmp-layer name=lstm1 input=[-1] delay=-3'
+# It generates an LSTM sub-graph with output projections. It can also generate
+# outputs without projection, but you could use the XconfigLstmLayer for this
+# simple LSTM.
+# The output dimension of the layer may be specified via 'cell-dim=xxx', but if not specified,
+# the dimension defaults to the same as the input.
+# See other configuration values below.
+#
+# Parameters of the class, and their defaults:
+#   input='[-1]'             [Descriptor giving the input of the layer.]
+#   cell-dim=-1            [Dimension of the cell]
+#   recurrent-projection_dim [Dimension of the projection used in recurrent connections, e.g. cell-dim/4]
+#   non-recurrent-projection-dim   [Dimension of the projection in non-recurrent connections,
+#                                   in addition to recurrent-projection-dim, e.g. cell-dim/4]
+#   delay=-1                 [Delay in the recurrent connections of the LSTM ]
+#   clipping-threshold=30    [nnet3 LSTMs use a gradient clipping component at the recurrent connections.
+#                             This is the threshold used to decide if clipping has to be activated ]
+#   zeroing-interval=20      [interval at which we (possibly) zero out the recurrent derivatives.]
+#   zeroing-threshold=15     [We only zero out the derivs every zeroing-interval, if derivs exceed this value.]
+#   self_repair_scale_nonlinearity=1e-5      [It is a constant scaling the self-repair vector computed in derived classes of NonlinearComponent]
+#                                       i.e.,  SigmoidComponent, TanhComponent and RectifiedLinearComponent ]
+#   ng-per-element-scale-options=''   [Additional options used for the diagonal matrices in the LSTM ]
+#   ng-affine-options=''              [Additional options used for the full matrices in the LSTM, can be used to do things like set biases to initialize to 1]
+#   decay-time=-1            [If >0, an approximate maximum on how many frames
+#                            can be remembered via summation into the cell
+#                            contents c_t; enforced by putting a scaling factor
+#                            of recurrence_scale = 1 - abs(delay)/decay_time on
+#                            the recurrence, i.e. the term c_{t-1} in the LSTM
+#                            equations.  E.g. setting this to 20 means no more
+#                            than about 20 frames' worth of history,
+#                            i.e. history since about t = t-20, can be
+#                            accumulated in c_t.]
+#  l2-regularize=0.0         Constant controlling l2 regularization for this layer
+class XconfigNestedLstmpLayer(XconfigLayerBase):
+    def __init__(self, first_token, key_to_value, prev_names = None):
+        assert first_token == "nested-lstmp-layer"
+        XconfigLayerBase.__init__(self, first_token, key_to_value, prev_names)
+
+    def set_default_configs(self):
+        self.config = {'input' : '[-1]',
+                        'cell-dim' : -1, # this is a compulsory argument
+                        'recurrent-projection-dim' : -1,  # defaults to cell-dim / 4
+                        'non-recurrent-projection-dim' : -1, # defaults to
+                                                             # recurrent-projection-dim
+                        'clipping-threshold' : 30.0,
+                        'delay' : -1,
+                        'ng-per-element-scale-options' : ' max-change=0.75 ',
+                        'ng-affine-options' : ' max-change=0.75 ',
+                        'nested-ng-affine-options' : ' max-change=1.5',
+                        'lstm-nonlinearity-options' : ' max-change=0.75',
+                        'self-repair-scale-nonlinearity' : 0.00001,
+                        'zeroing-interval' : 20,
+                        'zeroing-threshold' : 15.0,
+                        'dropout-proportion' : -1.0, # If -1.0, no dropout components will be added
+                        'dropout-per-frame' : False,  # If false, regular dropout, not per frame.
+                        'decay-time':  -1.0,
+                       'l2-regularize': 0.0,
+                       }
+
+    def set_derived_configs(self):
+        if self.config['recurrent-projection-dim'] <= 0:
+            self.config['recurrent-projection-dim'] = self.config['cell-dim'] / 4
+
+        if self.config['non-recurrent-projection-dim'] <= 0:
+            self.config['non-recurrent-projection-dim'] = \
+               self.config['recurrent-projection-dim']
+
+    def check_configs(self):
+        for key in ['cell-dim', 'recurrent-projection-dim',
+                    'non-recurrent-projection-dim']:
+            if self.config[key] <= 0:
+                raise RuntimeError("{0} has invalid value {1}.".format(
+                    key, self.config[key]))
+
+        if self.config['delay'] == 0:
+            raise RuntimeError("delay cannot be zero")
+
+        if (self.config['recurrent-projection-dim'] +
+            self.config['non-recurrent-projection-dim'] >
+            self.config['cell-dim']):
+            raise RuntimeError("recurrent+non-recurrent projection dim exceeds "
+                                "cell dim.")
+        for key in ['self-repair-scale-nonlinearity']:
+            if self.config[key] < 0.0 or self.config[key] > 1.0:
+                raise RuntimeError("{0} has invalid value {2}."
+                                   .format(self.layer_type, key,
+                                           self.config[key]))
+
+        if ((self.config['dropout-proportion'] > 1.0 or
+             self.config['dropout-proportion'] < 0.0) and
+             self.config['dropout-proportion'] != -1.0 ):
+             raise RuntimeError("dropout-proportion has invalid value {0}."
+                                .format(self.config['dropout-proportion']))
+
+    def auxiliary_outputs(self):
+        return ['c_t']
+
+    def output_name(self, auxiliary_output = None):
+        node_name = 'rp_t'
+        if auxiliary_output is not None:
+            if auxiliary_output in self.auxiliary_outputs():
+                node_name = auxiliary_output
+            else:
+                raise Exception("In {0} of type {1}, unknown auxiliary output name {1}".format(self.layer_type, auxiliary_output))
+
+        return '{0}.{1}'.format(self.name, node_name)
+
+    def output_dim(self, auxiliary_output = None):
+        if auxiliary_output is not None:
+            if auxiliary_output in self.auxiliary_outputs():
+                if node_name == 'c_t':
+                    return self.config['cell-dim']
+                # add code for other auxiliary_outputs here when we decide to expose them
+            else:
+                raise Exception("In {0} of type {1}, unknown auxiliary output name {1}".format(self.layer_type, auxiliary_output))
+
+        return self.config['recurrent-projection-dim'] + self.config['non-recurrent-projection-dim']
+
+    def get_full_config(self):
+        ans = []
+        config_lines = self.generate_lstm_config()
+
+        for line in config_lines:
+            for config_name in ['ref', 'final']:
+                # we do not support user specified matrices in LSTM initialization
+                # so 'ref' and 'final' configs are the same.
+                ans.append((config_name, line))
+        return ans
+
+    # convenience function to generate the LSTM config
+    def generate_lstm_config(self):
+
+        # assign some variables to reduce verbosity
+        name = self.name
+        # in the below code we will just call descriptor_strings as descriptors for conciseness
+        input_dim = self.descriptors['input']['dim']
+        input_descriptor = self.descriptors['input']['final-string']
+        cell_dim = self.config['cell-dim']
+        rec_proj_dim = self.config['recurrent-projection-dim']
+        nonrec_proj_dim = self.config['non-recurrent-projection-dim']
+        delay = self.config['delay']
+        repair_nonlin = self.config['self-repair-scale-nonlinearity']
+        repair_nonlin_str = "self-repair-scale={0:.10f}".format(repair_nonlin) if repair_nonlin is not None else ''
+        decay_time = self.config['decay-time']
+        # we expect decay_time to be either -1, or large, like 10 or 50.
+        recurrence_scale = (1.0 if decay_time < 0 else
+                            1.0 - (abs(delay) / decay_time))
+        assert recurrence_scale > 0   # or user may have set decay-time much
+                                      # too small.
+        bptrunc_str = ("clipping-threshold={0}"
+                      " zeroing-threshold={1}"
+                      " zeroing-interval={2}"
+                      " recurrence-interval={3}"
+                      " scale={4}"
+                      "".format(self.config['clipping-threshold'],
+                                self.config['zeroing-threshold'],
+                                self.config['zeroing-interval'],
+                                abs(delay), recurrence_scale))
+        affine_str = self.config['ng-affine-options']
+        pes_str = self.config['ng-per-element-scale-options']
+        nested_affine_str = self.config['nested-ng-affine-options']
+        dropout_proportion = self.config['dropout-proportion']
+        dropout_per_frame = 'true' if self.config['dropout-per-frame'] else 'false'
+
+        # Natural gradient per element scale parameters
+        if re.search('param-mean', pes_str) is None and \
+           re.search('param-stddev', pes_str) is None:
+           pes_str += " param-mean=0.0 param-stddev=1.0 "
+        l2_regularize = self.config['l2-regularize']
+        l2_regularize_option = ('l2-regularize={0} '.format(l2_regularize)
+                                if l2_regularize != 0.0 else '')
+
+        configs = []
+
+        # the equations implemented here are from Sak et. al. "Long Short-Term
+        # Memory Recurrent Neural Network Architectures for Large Scale Acoustic
+        # Modeling"
+        # https://arxiv.org/pdf/1402.1128.pdf
+        # See equations (7) to (14).
+        # naming convention <layer-name>.W_<outputname>.<input_name>
+        # e.g. Lstm1.W_i.xr for matrix providing output to gate i and operating
+        # on an appended vector [x,r]
+        configs.append("# Input gate control : W_i* matrices")
+        configs.append("component name={0}.W_i.xr type=NaturalGradientAffineComponent input-dim={1} "
+                       "output-dim={2} {3} {4}".format(name, input_dim + rec_proj_dim,
+                                                       cell_dim, affine_str, l2_regularize_option))
+        configs.append("# note : the cell outputs pass through a diagonal matrix")
+        configs.append("component name={0}.w_i.c type=NaturalGradientPerElementScaleComponent "
+                       "dim={1} {2} {3}".format(name, cell_dim, pes_str,
+                                                l2_regularize_option))
+        configs.append("# Forget gate control : W_f* matrices")
+        configs.append("component name={0}.W_f.xr type=NaturalGradientAffineComponent input-dim={1} "
+                       "output-dim={2} {3} {4}".format(name, input_dim + rec_proj_dim, cell_dim,
+                                                       affine_str, l2_regularize_option))
+        configs.append("# note : the cell outputs pass through a diagonal matrix")
+        configs.append("component name={0}.w_f.c type=NaturalGradientPerElementScaleComponent  "
+                       "dim={1} {2} {3}".format(name, cell_dim, pes_str, l2_regularize_option))
+
+        configs.append("#  Output gate control : W_o* matrices")
+        configs.append("component name={0}.W_o.xr type=NaturalGradientAffineComponent input-dim={1} "
+                       "output-dim={2} {3} {4}".format(name, input_dim + rec_proj_dim, cell_dim,
+                                                       affine_str, l2_regularize_option))
+        configs.append("# note : the cell outputs pass through a diagonal matrix")
+        configs.append("component name={0}.w_o.c type=NaturalGradientPerElementScaleComponent "
+                       "dim={1} {2} {3}".format(name, cell_dim, pes_str, l2_regularize_option))
+
+        configs.append("# Cell input matrices : W_c* matrices")
+        configs.append("component name={0}.W_c.xr type=NaturalGradientAffineComponent input-dim={1} "
+                       "output-dim={2} {3} {4}".format(name, input_dim + rec_proj_dim, cell_dim,
+                                                       affine_str, l2_regularize_option))
+
+        configs.append("# Defining the non-linearities")
+        configs.append("component name={0}.i type=SigmoidComponent dim={1} {2}".format(name, cell_dim, repair_nonlin_str))
+        configs.append("component name={0}.f type=SigmoidComponent dim={1} {2}".format(name, cell_dim, repair_nonlin_str))
+        configs.append("component name={0}.o type=SigmoidComponent dim={1} {2}".format(name, cell_dim, repair_nonlin_str))
+        configs.append("component name={0}.g type=TanhComponent dim={1} {2}".format(name, cell_dim, repair_nonlin_str))
+        configs.append("component name={0}.h type=TanhComponent dim={1} {2}".format(name, cell_dim, repair_nonlin_str))
+        if dropout_proportion != -1.0:
+            configs.append("component name={0}.dropout type=DropoutComponent dim={1} "
+                           "dropout-proportion={2} dropout-per-frame={3}"
+                           .format(name, cell_dim, dropout_proportion, dropout_per_frame))
+        configs.append("# Defining the components for other cell computations")
+        configs.append("component name={0}.c1 type=ElementwiseProductComponent input-dim={1} output-dim={2}"
+                       "".format(name, 2 * cell_dim, cell_dim))
+        configs.append("component name={0}.c2 type=ElementwiseProductComponent input-dim={1} output-dim={2}"
+                       "".format(name, 2 * cell_dim, cell_dim))
+        configs.append("component name={0}.m type=ElementwiseProductComponent input-dim={1} output-dim={2}"
+                       "".format(name, 2 * cell_dim, cell_dim))
+
+        # inner lstm
+        lstm_str = self.config['lstm-nonlinearity-options']
+        configs.append("##  Begin nested LTSM layer '{0}.nested'".format(name))
+        configs.append("# Gate control: contains W_i, W_f, W_c and W_o matrices as blocks.")
+        configs.append("component name={0}.nested.W_all type=NaturalGradientAffineComponent input-dim={1} "
+                       "output-dim={2} {3} {4}".format(name, cell_dim * 2, cell_dim * 4,
+                                                       nested_affine_str, l2_regularize_option))
+        configs.append("component name={0}.nested.lstm_nonlin type=LstmNonlinearityComponent cell-dim={1} "
+                       "use-dropout={2} {3} {4}"
+                       "".format(name, cell_dim, "false", lstm_str, l2_regularize_option))
+        configs.append("component name={0}.nested.cm_trunc type=BackpropTruncationComponent "
+                       "dim={1} {2}".format(name, 2 * cell_dim, bptrunc_str))
+        configs.append("###  Nodes for the components above.")
+        configs.append("component-node name={0}.nested.four_parts component={0}.nested.W_all input=Append({0}.c2_t, {0}.c1_t)".format(name))
+        configs.append("component-node name={0}.nested.lstm_nonlin component={0}.nested.lstm_nonlin "
+                       "input=Append({0}.nested.four_parts, IfDefined(Offset({0}.nested.c_trunc, {1})))".format(name, delay))
+        configs.append("component-node name={0}.nested.cm_trunc component={0}.nested.cm_trunc input={0}.nested.lstm_nonlin".format(name))
+        configs.append("dim-range-node name={0}.nested.c_trunc input-node={0}.nested.cm_trunc dim-offset=0 dim={1}".format(name, cell_dim))
+        configs.append("### End nested LTSM layer '{0}.nested'".format(name))
+
+        # set c_t as the inner lstm's m_t
+        configs.append("dim-range-node name={0}.c_t input-node={0}.nested.lstm_nonlin dim-offset={1} dim={1}".format(name, cell_dim))
+        delayed_c_t_descriptor = "IfDefined(Offset({0}.c_t, {1}))".format(name, delay)
+
+        recurrent_connection = '{0}.r_t'.format(name)
+        configs.append("# i_t")
+        configs.append("component-node name={0}.i1_t component={0}.W_i.xr input=Append({1}, IfDefined(Offset({2}, {3})))"
+                       "".format(name, input_descriptor, recurrent_connection, delay))
+        configs.append("component-node name={0}.i2_t component={0}.w_i.c  input={1}".format(name, delayed_c_t_descriptor))
+        if dropout_proportion != -1.0:
+            configs.append("component-node name={0}.i_t_predrop component={0}.i input=Sum({0}.i1_t, {0}.i2_t)".format(name))
+            configs.append("component-node name={0}.i_t component={0}.dropout input={0}.i_t_predrop".format(name))
+        else:
+            configs.append("component-node name={0}.i_t component={0}.i input=Sum({0}.i1_t, {0}.i2_t)".format(name))
+
+        configs.append("# f_t")
+        configs.append("component-node name={0}.f1_t component={0}.W_f.xr input=Append({1}, IfDefined(Offset({2}, {3})))"
+                       "".format(name, input_descriptor, recurrent_connection, delay))
+        configs.append("component-node name={0}.f2_t component={0}.w_f.c  input={1}".format(name, delayed_c_t_descriptor))
+        if dropout_proportion != -1.0:
+            configs.append("component-node name={0}.f_t_predrop component={0}.f input=Sum({0}.f1_t, {0}.f2_t)".format(name))
+            configs.append("component-node name={0}.f_t component={0}.dropout input={0}.f_t_predrop".format(name))
+        else:
+            configs.append("component-node name={0}.f_t component={0}.f input=Sum({0}.f1_t, {0}.f2_t)".format(name))
+
+        configs.append("# o_t")
+        configs.append("component-node name={0}.o1_t component={0}.W_o.xr input=Append({1}, IfDefined(Offset({2}, {3})))".format(name, input_descriptor, recurrent_connection, delay))
+        configs.append("component-node name={0}.o2_t component={0}.w_o.c input={0}.c_t".format(name))
+        if dropout_proportion != -1.0:
+            configs.append("component-node name={0}.o_t_predrop component={0}.o input=Sum({0}.o1_t, {0}.o2_t)".format(name))
+            configs.append("component-node name={0}.o_t component={0}.dropout input={0}.o_t_predrop".format(name))
+        else:
+            configs.append("component-node name={0}.o_t component={0}.o input=Sum({0}.o1_t, {0}.o2_t)".format(name))
+
+        configs.append("# h_t")
+        configs.append("component-node name={0}.h_t component={0}.h input={0}.c_t".format(name))
+
+        configs.append("# g_t")
+        configs.append("component-node name={0}.g1_t component={0}.W_c.xr input=Append({1}, IfDefined(Offset({2}, {3})))"
+                       "".format(name, input_descriptor, recurrent_connection, delay))
+        configs.append("component-node name={0}.g_t component={0}.g input={0}.g1_t".format(name))
+
+        configs.append("# parts of c_t")
+        configs.append("component-node name={0}.c1_t component={0}.c1  input=Append({0}.f_t, {1})".format(name, delayed_c_t_descriptor))
+        configs.append("component-node name={0}.c2_t component={0}.c2 input=Append({0}.i_t, {0}.g_t)".format(name))
+
+        configs.append("# m_t")
+        configs.append("component-node name={0}.m_t component={0}.m input=Append({0}.o_t, {0}.h_t)".format(name))
+
+        # add the recurrent connections
+        configs.append("# projection matrices : Wrm and Wpm")
+        configs.append("component name={0}.W_rp.m type=NaturalGradientAffineComponent input-dim={1} "
+                       "output-dim={2} {3} {4}".format(name, cell_dim, rec_proj_dim + nonrec_proj_dim,
+                                                       affine_str, l2_regularize_option))
+        configs.append("component name={0}.r type=BackpropTruncationComponent dim={1} {2}"
+                       "".format(name, rec_proj_dim, bptrunc_str))
+
+        configs.append("# r_t and p_t : rp_t will be the output")
+        configs.append("component-node name={0}.rp_t component={0}.W_rp.m input={0}.m_t"
+                       "".format(name))
+        configs.append("dim-range-node name={0}.r_t_preclip input-node={0}.rp_t dim-offset=0 "
+                       "dim={1}".format(name, rec_proj_dim))
+        configs.append("component-node name={0}.r_t component={0}.r input={0}.r_t_preclip".format(name))
+
+        return configs
+
 
 # This class is for lines like
 #   'fast-lstm-layer name=lstm1 input=[-1] delay=-3'
