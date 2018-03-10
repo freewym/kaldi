@@ -39,6 +39,7 @@ TimeHeightConvolutionComponent::TimeHeightConvolutionComponent(
     time_offset_required_(other.time_offset_required_),
     linear_params_(other.linear_params_),
     bias_params_(other.bias_params_),
+    orthonormal_constraint_(other.orthonormal_constraint_),
     max_memory_mb_(other.max_memory_mb_),
     use_natural_gradient_(other.use_natural_gradient_),
     preconditioner_in_(other.preconditioner_in_),
@@ -71,6 +72,8 @@ std::string TimeHeightConvolutionComponent::Info() const {
   stream << UpdatableComponent::Info() << ' ' << model_.Info();
   PrintParameterStats(stream, "filter-params", linear_params_);
   PrintParameterStats(stream, "bias-params", bias_params_, true);
+  if (orthonormal_constraint_ != 0.0)
+    stream << ", orthonormal-constraint=" << orthonormal_constraint_;
   stream << ", num-params=" << NumParameters()
          << ", max-memory-mb=" << max_memory_mb_
          << ", use-natural-gradient=" << use_natural_gradient_;
@@ -137,6 +140,8 @@ void TimeHeightConvolutionComponent::InitFromConfig(ConfigLine *cfl) {
   cfl->GetValue("height-subsample-out", &model_.height_subsample_out);
   cfl->GetValue("max-memory-mb", &max_memory_mb_);
   KALDI_ASSERT(max_memory_mb_ > 0.0);
+  orthonormal_constraint_ = 0.0;
+  cfl->GetValue("orthonormal-constraint", &orthonormal_constraint_);
 
   { // This block sets up model_.offsets.
     model_.offsets.clear();
@@ -429,6 +434,10 @@ void TimeHeightConvolutionComponent::Write(std::ostream &os, bool binary) const 
   linear_params_.Write(os, binary);
   WriteToken(os, binary, "<BiasParams>");
   bias_params_.Write(os, binary);
+  if (orthonormal_constraint_ != 0.0) {
+    WriteToken(os, binary, "<OrthonormalConstraint>");
+    WriteBasicType(os, binary, orthonormal_constraint_);
+  }
   WriteToken(os, binary, "<MaxMemoryMb>");
   WriteBasicType(os, binary, max_memory_mb_);
   WriteToken(os, binary, "<UseNaturalGradient>");
@@ -462,6 +471,12 @@ void TimeHeightConvolutionComponent::Read(std::istream &is, bool binary) {
   linear_params_.Read(is, binary);
   ExpectToken(is, binary, "<BiasParams>");
   bias_params_.Read(is, binary);
+  if (PeekToken(is, binary) == 'O') {
+    ExpectToken(is, binary, "<OrthonormalConstraint>");
+    ReadBasicType(is, binary, &orthonormal_constraint_);
+  } else {
+    orthonormal_constraint_ = 0.0;
+  }
   ExpectToken(is, binary, "<MaxMemoryMb>");
   ReadBasicType(is, binary, &max_memory_mb_);
   ExpectToken(is, binary, "<UseNaturalGradient>");

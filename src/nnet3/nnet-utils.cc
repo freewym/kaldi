@@ -993,6 +993,24 @@ void ConstrainOrthonormal(Nnet *nnet) {
         params.CopyFromMat(params_trans, kTrans);
       }
     }
+
+    TimeHeightConvolutionComponent *tc =
+      dynamic_cast<TimeHeightConvolutionComponent*>(component);
+    if (tc != NULL && tc->OrthonormalConstraint() != 0.0) {
+      if (RandInt(0, 3) != 0)
+        continue;  // For efficiency, only do this every 4 minibatches-- it won't
+                   // stray far.
+      BaseFloat scale = tc->OrthonormalConstraint();
+      CuMatrixBase<BaseFloat> &params = tc->LinearParams();
+      int32 rows = params.NumRows(), cols = params.NumCols();
+      if (rows <= cols) {
+        ConstrainOrthonormalInternal(scale, &params);
+      } else {
+        CuMatrix<BaseFloat> params_trans(params, kTrans);
+        ConstrainOrthonormalInternal(scale, &params_trans);
+        params.CopyFromMat(params_trans, kTrans);
+      }
+    }
   }
 }
 

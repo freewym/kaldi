@@ -428,6 +428,7 @@ class XconfigResBlock(XconfigLayerBase):
                        'self-repair-lower-threshold1': 0.05,
                        'self-repair-lower-threshold2': 0.05,
                        'self-repair-lower-threshold3': 0.05,
+                       'orthonormal-constraint': 1.0,
                        'max-change': 0.75,
                        'allow-zero-padding': True,
                        'bypass-source' : 'noop',
@@ -473,7 +474,7 @@ class XconfigResBlock(XconfigLayerBase):
     def output_name(self, auxiliary_output = None):
         bypass_source = self.config['bypass-source']
         b = self.config['num-bottleneck-filters']
-        conv = ('{0}.conv2' if b <= 0 else '{0}.conv3').format(self.name)
+        conv = ('{0}.conv2.b' if b <= 0 else '{0}.conv3').format(self.name)
         if bypass_source == 'input':
             residual = self.descriptors['input']['final-string']
         elif bypass_source == 'noop':
@@ -577,20 +578,52 @@ class XconfigResBlock(XconfigLayerBase):
                 value = self.config[opt_name]
                 if value != '':
                         a.append('{0}={1}'.format(opt_name, value))
-            conv_opts = ('height-in={h} height-out={h} height-offsets=-{hp},0,{hp} '
-                         'time-offsets=-{p},0,{p} '
-                         'num-filters-in={f} num-filters-out={f} {r} {o}'.format(
+            conv_opts = ('height-in={h} height-out={h} height-offsets=-{hp},0 '
+                         'time-offsets=-{p},0 '
+                         'num-filters-in={f} num-filters-out={fb} {r} {o}'.format(
                              h=height, hp=height_period, p=time_period, f=num_filters,
+                             fb=num_filters // 2,
                              r=('required-time-offsets=0' if allow_zero_padding else ''),
                              o=' '.join(a)))
 
-            configs.append('component name={0}.conv{1} type=TimeHeightConvolutionComponent '
-                           '{2}'.format(name, n, conv_opts))
-            configs.append('component-node name={0}.conv{1} component={0}.conv{1} '
+            configs.append('component name={0}.conv{1}.a type=TimeHeightConvolutionComponent '
+                           '{2} orthonormal-constraint={3}'.format(name, n, conv_opts, self.config['orthonormal-constraint']))
+            configs.append('component-node name={0}.conv{1}.a component={0}.conv{1}.a '
                            'input={2}'.format(name, n, cur_descriptor))
-            cur_descriptor = '{0}.conv{1}'.format(name, n)
+            cur_descriptor = '{0}.conv{1}.a'.format(name, n)
 
+            '''
+            # the ReLU
+            configs.append('component name={0}.relu{1}.bet type=RectifiedLinearComponent '
+                           'dim={2} block-dim={3} self-repair-scale={4} '
+                           'self-repair-lower-threshold={5}'.format(
+                               name, n, num_filters // 8 * height, num_filters // 8,
+                               self.config['self-repair-scale'],
+                               self.config['self-repair-lower-threshold{0}'.format(n)]))
+            configs.append('component-node name={0}.relu{1}.bet component={0}.relu{1}.bet '
+                           'input={2}'.format(name, n, cur_descriptor))
+            cur_descriptor = '{0}.relu{1}.bet'.format(name, n)
+            '''
 
+            # the batch-norm
+            configs.append('component name={0}.batchnorm{1}.bet  type=BatchNormComponent dim={2} '
+                           'block-dim={3}'.format(
+                           name, n, num_filters // 2 * height, num_filters // 2))
+            configs.append('component-node name={0}.batchnorm{1}.bet component={0}.batchnorm{1}.bet '
+                           'input={2}'.format(name, n, cur_descriptor))
+            cur_descriptor = '{0}.batchnorm{1}.bet'.format(name, n)
+
+            conv_opts = ('height-in={h} height-out={h} height-offsets=0,{hp} '
+                         'time-offsets=0,{p} '
+                         'num-filters-in={fb} num-filters-out={f} {r} {o}'.format(
+                             h=height, hp=height_period, p=time_period, fb=num_filters // 2, f=num_filters,
+                             r=('required-time-offsets=0' if allow_zero_padding else ''),
+                             o=' '.join(a)))
+            configs.append('component name={0}.conv{1}.b type=TimeHeightConvolutionComponent '
+                           '{2}'.format(name, n, conv_opts))
+            configs.append('component-node name={0}.conv{1}.b component={0}.conv{1}.b '
+                           'input={2}'.format(name, n, cur_descriptor))
+            cur_descriptor = '{0}.conv{1}.b'.format(name, n)
 
         if self.config['bypass-source'] == 'noop':
             dim = self.descriptors['input']['dim']

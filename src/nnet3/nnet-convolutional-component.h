@@ -281,6 +281,8 @@ class TimeHeightConvolutionComponent: public UpdatableComponent {
   virtual void Vectorize(VectorBase<BaseFloat> *params) const;
   virtual void UnVectorize(const VectorBase<BaseFloat> &params);
   virtual void FreezeNaturalGradient(bool freeze);
+  const CuVector<BaseFloat> &BiasParams() const { return bias_params_; }
+  CuMatrix<BaseFloat> &LinearParams() { return linear_params_; }
 
 
   class PrecomputedIndexes: public ComponentPrecomputedIndexes {
@@ -299,6 +301,7 @@ class TimeHeightConvolutionComponent: public UpdatableComponent {
     time_height_convolution::ConvolutionComputation computation;
   };
 
+  BaseFloat OrthonormalConstraint() const { return orthonormal_constraint_; }
   void ScaleLinearParams(BaseFloat alpha) { linear_params_.Scale(alpha); }
  private:
 
@@ -346,6 +349,7 @@ class TimeHeightConvolutionComponent: public UpdatableComponent {
   // model_.num_filters_out.
   CuVector<BaseFloat> bias_params_;
 
+  BaseFloat orthonormal_constraint_;
 
   // Maximum amount of temporary memory in megabytes that is allowed to be used
   // in the convolution computation.  (this is per computation, but it's
