@@ -40,6 +40,8 @@ struct NnetTrainerOptions {
   BaseFloat l2_regularize_factor;
   BaseFloat backstitch_training_scale;
   int32 backstitch_training_interval;
+  BaseFloat epsilon;
+  BaseFloat perturb_proportion;
   BaseFloat batchnorm_stats_scale;
   std::string read_cache;
   std::string write_cache;
@@ -57,6 +59,8 @@ struct NnetTrainerOptions {
       l2_regularize_factor(1.0),
       backstitch_training_scale(0.0),
       backstitch_training_interval(1),
+      epsilon(0.0),
+      perturb_proportion(1.0),
       batchnorm_stats_scale(0.8),
       binary_write_cache(true),
       max_param_change(2.0) { }
@@ -99,6 +103,8 @@ struct NnetTrainerOptions {
                    &backstitch_training_interval,
                    "do backstitch training with the specified interval of "
                    "minibatches. It is referred as 'n' in our publications.");
+    opts->Register("epsilon", &epsilon, "regularization constant for perturbed training");
+    opts->Register("perturb-proportion", &perturb_proportion, "the proportion of examples for perturbed training");
     opts->Register("read-cache", &read_cache, "The location from which to read "
                    "the cached computation.");
     opts->Register("write-cache", &write_cache, "The location to which to write "

@@ -70,6 +70,11 @@ class NnetChainTrainer {
   void TrainInternal(const NnetChainExample &eg,
                      const NnetComputation &computation);
 
+  void TrainInternalAdversarial(const NnetChainExample &eg,
+                                const NnetComputation &computation,
+                                bool is_adversarial_step1=false,
+                                NnetChainExample *eg_perturbed=NULL);
+ 
   // The internal function for doing one step of backstitch training. Depending
   // on whether is_backstitch_step1 is true, It could be either the first
   // (backward) step, or the second (forward) step of backstitch.
