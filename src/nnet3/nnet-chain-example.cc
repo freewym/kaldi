@@ -313,7 +313,7 @@ void GetChainComputationRequest(const Nnet &nnet,
     IoSpecification &io_spec = request->inputs.back();
     io_spec.name = name;
     io_spec.indexes = io.indexes;
-    io_spec.has_deriv = false;
+    io_spec.has_deriv = need_model_derivative;
   }
   for (size_t i = 0; i < eg.outputs.size(); i++) {
     // there will normally be exactly one output , named "output"

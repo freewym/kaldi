@@ -83,6 +83,14 @@ void NnetChainTrainer::Train(const NnetChainExample &chain_eg) {
     srand(srand_seed_ + num_minibatches_processed_);
     ResetGenerators(nnet_);
     TrainInternalBackstitch(chain_eg, *computation, is_backstitch_step1);
+  } else if (nnet_config.epsilon > 0 &&
+        RandInt(0, 100) < nnet_config.perturb_proportion * 100) {
+    NnetChainExample chain_eg_perturbed;
+    bool is_adversarial_step1 = true;
+    TrainInternalAdversarial(chain_eg, *computation, is_adversarial_step1,
+        &chain_eg_perturbed);
+    is_adversarial_step1 = false;
+    TrainInternalAdversarial(chain_eg_perturbed, *computation, is_adversarial_step1);
   } else { // conventional training
     TrainInternal(chain_eg, *computation);
   }
@@ -136,6 +144,87 @@ void NnetChainTrainer::TrainInternal(const NnetChainExample &eg,
     ScaleNnet(nnet_config.momentum, delta_nnet_);
   else
     ScaleNnet(0.0, delta_nnet_);
+}
+
+void NnetChainTrainer::TrainInternalAdversarial(const NnetChainExample &eg,
+                                                const NnetComputation &computation,
+                                                bool is_adversarial_step1,
+                                                NnetChainExample *eg_perturbed) {
+  const NnetTrainerOptions &nnet_config = opts_.nnet_config;
+  // note: because we give the 1st arg (nnet_) as a pointer to the
+  // constructor of 'computer', it will use that copy of the nnet to
+  // store stats.
+  Nnet *nnet_ptr = NULL;
+  Nnet nnet_temp(*nnet_);
+  if (is_adversarial_step1)
+    nnet_ptr = &nnet_temp;
+  else
+    nnet_ptr = delta_nnet_;
+  NnetComputer computer(nnet_config.compute_config, computation,
+                        nnet_, nnet_ptr);
+  // give the inputs to the computer object.
+  computer.AcceptInputs(*nnet_, eg.inputs);
+  computer.Run();
+
+  bool is_adversarial_step2 = !is_adversarial_step1;
+  this->ProcessOutputs(is_adversarial_step2, eg, &computer); // abuse suffix
+  computer.Run();
+
+  if (is_adversarial_step1) {
+    *eg_perturbed = eg;
+    for (size_t i = 0; i < eg.inputs.size(); i++) {
+      const NnetIo &io = eg.inputs[i];
+      if (io.name == "input") {
+         KALDI_ASSERT(io.features.NumRows() > 0);
+      }
+      int32 node_index = nnet_->GetNodeIndex(io.name);
+      KALDI_ASSERT(node_index != -1);
+      if (nnet_->IsInputNode(node_index)) {
+        CuMatrix<BaseFloat> input_deriv(computer.GetOutput(io.name));
+        input_deriv.ApplyHeaviside();
+        input_deriv.Scale(2.0);
+        input_deriv.Add(-1.0);
+        CuMatrix<BaseFloat> cu_input(io.features.NumRows(),
+            io.features.NumCols(), kUndefined);
+        cu_input.CopyFromGeneralMat(io.features);
+        cu_input.AddMat(-nnet_config.epsilon, input_deriv);
+        Matrix<BaseFloat> input(cu_input);
+        eg_perturbed->inputs[i].features = input;
+      }
+    }
+  }
+
+  // If relevant, add in the part of the gradient that comes from L2
+  // regularization.
+  if (is_adversarial_step2)
+    ApplyL2Regularization(*nnet_,
+        GetNumNvalues(eg.inputs, false) *
+        nnet_config.l2_regularize_factor, delta_nnet_);
+
+  if (is_adversarial_step2) {
+    // Updates the parameters of nnet
+    bool success = UpdateNnetWithMaxChange(
+        *delta_nnet_,
+        nnet_config.max_param_change,
+        1.0, 1.0 - nnet_config.momentum, nnet_,
+        &max_change_stats_);
+
+    // The following will only do something if we have a LinearComponent or
+    // AffineComponent with orthonormal-constraint set to a nonzero value.
+    ConstrainOrthonormal(nnet_);
+
+    // Scale down the batchnorm stats (keeps them fresh... this affects what
+    // happens when we use the model with batchnorm test-mode set).  Do this
+    // after backstitch step 2 so that the stats are scaled down before we start
+    // the next minibatch.
+    ScaleBatchnormStats(nnet_config.batchnorm_stats_scale, nnet_);
+
+    // Scale delta_nnet
+    if (success)
+      ScaleNnet(nnet_config.momentum, delta_nnet_);
+    else
+      ScaleNnet(0.0, delta_nnet_);
+  }
 }
 
 void NnetChainTrainer::TrainInternalBackstitch(const NnetChainExample &eg,

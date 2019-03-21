@@ -195,6 +195,8 @@ def train_new_models(dir, iter, srand, num_jobs,
                     --max-param-change={max_param_change} \
                     --backstitch-training-scale={backstitch_training_scale} \
                     --backstitch-training-interval={backstitch_training_interval} \
+                    --epsilon=0.1 \
+                    --perturb-proportion=1.0 \
                     --l2-regularize-factor={l2_regularize_factor} {train_opts} \
                     --srand={srand} \
                     "{raw_model}" {dir}/den.fst \
