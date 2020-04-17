@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# Copyright 2018-2019  Johns Hopkins University (Author: Daniel Povey)
-#           2018-2019  Yiming Wang
+# Copyright 2018-2020  Daniel Povey
+#           2018-2020  Yiming Wang
 # Apache 2.0
 
 
